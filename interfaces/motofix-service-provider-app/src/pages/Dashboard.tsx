@@ -1,0 +1,483 @@
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { toast } from 'sonner'
+import { mechanicService, jobService, notificationService, reviewService, normalizeRequest } from '@/config/api'
+import { useAuth } from '@/contexts/AuthContext'
+import { useWS } from '@/contexts/WebSocketContext'
+import { SIM_MINUTES } from '@/hooks/useJobSim'
+import TopHeader from '@/components/TopHeader'
+import BottomNav from '@/components/BottomNav'
+import IncomingRequestModal from '@/components/IncomingRequestModal'
+import Home from './tabs/Home'
+import Jobs from './tabs/Jobs'
+import Earnings from './tabs/Earnings'
+import Profile from './tabs/Profile'
+import type { MechanicProfile, ServiceRequest } from '@/types'
+
+type Tab = 'home' | 'jobs' | 'earnings' | 'profile'
+
+// ── Handled-job stats ─────────────────────────────────────────────────────────
+// Derived from the mechanic's handled jobs (every request picked up / accepted and
+// not cancelled — stored in the DB). A job counts from when it was accepted, so
+// "Today" tallies pickups today (resets at 00:00) and "This Week" tallies pickups
+// since Monday 00:00 (resets Sunday-midnight into Monday). Cancelled jobs are
+// excluded server-side, so cancelling a pickup drops it back out of the count.
+function startOfWeekMonday(now: Date): number {
+  const d = new Date(now)
+  const day = d.getDay()                 // 0 = Sunday
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+function jobTime(j: { accepted_at?: string; created_at?: string }): number {
+  // Pickup time is what counts; fall back to created_at if accepted_at is missing.
+  return new Date(j.accepted_at ?? j.created_at ?? 0).getTime()
+}
+function computeJobStats(jobs: { accepted_at?: string; created_at?: string }[]): { today: number; week: number } {
+  const now = new Date()
+  const todayStr = now.toDateString()
+  const weekStart = startOfWeekMonday(now)
+  return {
+    today: jobs.filter(j => new Date(jobTime(j)).toDateString() === todayStr).length,
+    week:  jobs.filter(j => jobTime(j) >= weekStart).length,
+  }
+}
+
+// Hold a freshly-dispatched job's alert this long so it appears AS the driver's
+// "Request Dispatched" animation finishes (~5s), rather than mid-animation.
+const DISPATCH_FOLLOW_DELAY_MS = 4500
+
+export default function Dashboard() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { user } = useAuth()
+  const { lastMessage, sendMessage } = useWS()
+
+  useLayoutEffect(() => {
+    document.body.style.background = 'var(--bg)'
+    return () => { document.body.style.background = '' }
+  }, [])
+
+  const [activeTab,     setActiveTab]     = useState<Tab>(
+    () => ((location.state as { tab?: string } | null)?.tab as Tab) ?? 'home'
+  )
+  const [isAvailable,   setIsAvailable]   = useState<boolean>(
+    () => localStorage.getItem('sp_availability') !== 'false'
+  )
+  const [activeRequest, setActiveRequest] = useState<ServiceRequest | null>(null)
+  const [pendingAlert,  setPendingAlert]  = useState<ServiceRequest | null>(null)
+  const [unreadCount,   setUnreadCount]   = useState(0)
+  const [profile,       setProfile]       = useState<MechanicProfile | null>(null)
+  const [pendingCount,  setPendingCount]  = useState(0)
+  const [todayCount,    setTodayCount]    = useState(0)
+  const [weekCount,     setWeekCount]     = useState(0)
+  // Underlying data kept so the stat-explainer popups open instantly (no re-fetch).
+  const [handledJobs,   setHandledJobs]   = useState<ServiceRequest[]>([])
+  const [ratingRows,    setRatingRows]    = useState<{ rating: number; customer_name?: string }[]>([])
+  const declinedIds      = useRef(new Set<string>())
+  const seenPendingIds   = useRef(new Set<string>())
+  // Latest active job, readable inside delayed timeouts without stale closures.
+  const activeRequestRef = useRef<ServiceRequest | null>(null)
+  const locWatchRef      = useRef<number | null>(null)
+  const lastLocSentRef   = useRef<number>(0)
+  const lastChatReqRef   = useRef<string | null>(null) // latest request with an unread driver message
+  const LOC_THROTTLE_MS  = 60 * 1000   // send at most once per minute
+
+  const mechIdRef = useRef<string | number | null>(null)
+
+  // Load handled jobs → Today / This-Week counts, and reviews → Rating
+  const loadHistoryStats = useCallback(async (mechanicId?: string | number | null) => {
+    if (mechanicId == null || mechanicId === '') return
+    const [jobsRes, reviewsRes] = await Promise.allSettled([
+      jobService.getHandled(),
+      reviewService.getByMechanic(),
+    ])
+    if (jobsRes.status === 'fulfilled') {
+      const jobs = jobsRes.value.data ?? []
+      setHandledJobs(jobs)
+      const s = computeJobStats(jobs)
+      setTodayCount(s.today)
+      setWeekCount(s.week)
+    }
+    if (reviewsRes.status === 'fulfilled') {
+      const body = reviewsRes.value.data as { average_rating?: number; reviews?: Array<{ rating?: number; customer_name?: string }> }
+      setRatingRows((body?.reviews ?? []).map(r => ({ rating: Number(r.rating ?? 0), customer_name: r.customer_name })))
+      if (body?.average_rating != null) setProfile(prev => prev ? { ...prev, average_rating: body.average_rating!, rating: body.average_rating! } : prev)
+    }
+  }, [])
+
+  /* ── Boot fetch ──────────────────────────────────────────────────────────────
+     Each request resolves INDEPENDENTLY so a slow one never blocks the others.
+     The profile (name + rating) is a fast single call, so it renders immediately
+     instead of waiting on the dispatch-proxied job/pending calls. */
+  useEffect(() => {
+    // 1) Profile first & on its own → name + rating + stats appear right away.
+    mechanicService.getProfile().then(res => {
+      const p: MechanicProfile = res.data
+      setProfile(p)
+      mechIdRef.current = p.id
+      loadHistoryStats(p.id)
+      const explicitlyOffline = localStorage.getItem('sp_availability') === 'false'
+      if (explicitlyOffline) {
+        setIsAvailable(false)
+        if (p.is_available) mechanicService.updateAvailability(false).catch(() => {})
+      } else {
+        setIsAvailable(true)
+        localStorage.setItem('sp_availability', 'true')
+        if (!p.is_available) mechanicService.updateAvailability(true).catch(() => {})
+      }
+    }).catch(() => {})
+
+    // 2) Notifications — independent.
+    notificationService.getAll().then(res => {
+      setUnreadCount((res.data ?? []).filter((n: { is_read: boolean }) => !n.is_read).length)
+    }).catch(() => {})
+
+    // 3) Active job + pending — fetched together because the pending alert depends
+    //    on whether there's an active job, but kept off the profile's critical path.
+    Promise.allSettled([jobService.getActive(), jobService.getPending()]).then(([jobsRes, pendingRes]) => {
+      let active: ServiceRequest | null = null
+      if (jobsRes.status === 'fulfilled') {
+        const jobs = jobsRes.value.data ?? []
+        active = jobs.find(j => ['accepted', 'en_route', 'arrived', 'in_progress'].includes(j.status)) ?? null
+        setActiveRequest(active)
+      }
+      if (pendingRes.status === 'fulfilled') {
+        const pendingJobs = pendingRes.value.data ?? []
+        setPendingCount(pendingJobs.length)
+        pendingJobs.forEach(j => seenPendingIds.current.add(j.id))
+        if (pendingJobs.length > 0 && !active) {
+          const first = pendingJobs.find(j => !declinedIds.current.has(j.id))
+          if (first) setPendingAlert(first)
+        }
+      }
+    })
+  }, [])
+
+  /* ── Reset the Today / This-Week counts exactly at local midnight ──────────
+     If the app is left open across midnight (or Sunday→Monday), re-pull the
+     handled jobs so Today rolls to 0 and the week recomputes precisely. */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const scheduleNextMidnight = () => {
+      const now = new Date()
+      const next = new Date(now)
+      next.setHours(24, 0, 0, 0) // next local midnight
+      timer = setTimeout(() => {
+        loadHistoryStats(mechIdRef.current)
+        scheduleNextMidnight()
+      }, next.getTime() - now.getTime())
+    }
+    scheduleNextMidnight()
+    return () => clearTimeout(timer)
+  }, [loadHistoryStats])
+
+  /* ── Re-sync unread count when tab regains focus ─────────── */
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const res = await notificationService.getAll()
+      setUnreadCount((res.data ?? []).filter((n: { is_read: boolean }) => !n.is_read).length)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshUnreadCount() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refreshUnreadCount])
+
+  // Mirror the active job into a ref so delayed timeouts see the latest value.
+  useEffect(() => { activeRequestRef.current = activeRequest }, [activeRequest])
+
+  /* ── WebSocket message handler ───────────────────────────── */
+  useEffect(() => {
+    const msg = lastMessage as {
+      type?: string; job?: Record<string, unknown>
+      service_request_id?: string; job_id?: string | number; status?: string
+      message?: string; sender_id?: string; cancelled_by?: string
+    } | null
+    if (!msg?.type) return
+
+    if (msg.type === 'new_job' && msg.job) {
+      const req = normalizeRequest(msg.job)
+      if (seenPendingIds.current.has(req.id)) return
+      seenPendingIds.current.add(req.id)
+      setPendingCount(c => c + 1)
+      if (!declinedIds.current.has(req.id)) {
+        // Hold the alert briefly so it appears AS the driver's "Request Dispatched"
+        // animation completes (~5s) — instead of popping while they're mid-dispatch.
+        setTimeout(() => {
+          if (declinedIds.current.has(req.id)) return       // declined in the meantime
+          if (activeRequestRef.current) return              // already on another job
+          setPendingAlert(prev => prev ?? req)              // don't override an open alert
+        }, DISPATCH_FOLLOW_DELAY_MS)
+      }
+    }
+
+    if (msg.type === 'status_update' && activeRequest && msg.status) {
+      // The backend sends the id as `job_id`; match it (string-safe) to the active job
+      const rid = String(msg.job_id ?? msg.service_request_id ?? '')
+      if (rid && rid === String(activeRequest.id)) {
+        setActiveRequest(prev => prev ? { ...prev, status: msg.status as ServiceRequest['status'] } : prev)
+        // Any status change can affect the counts: a cancellation drops the job
+        // back out of Today / This-Week; completion keeps it and refreshes rating.
+        loadHistoryStats(mechIdRef.current)
+        if (msg.status === 'cancelled') {
+          // The driver pulled out → make sure the mechanic isn't left in the dark.
+          if (msg.cancelled_by !== 'mechanic') {
+            toast.error(`${activeRequest.driver_name ?? 'The driver'} cancelled this request.`, { duration: 7000 })
+          }
+          setActiveRequest(null)
+          switchTab('home')
+        }
+      }
+    }
+
+    // Incoming chat message from a driver → bell notification
+    if (msg.type === 'chat_message' && msg.service_request_id) {
+      const myId = String(user?.id ?? (user as any)?.phone ?? '')
+      if (String(msg.sender_id ?? '') !== myId && msg.sender_id !== 'system') {
+        lastChatReqRef.current = String(msg.service_request_id)
+        setUnreadCount(c => c + 1)
+        toast('💬 New message from the driver', { duration: 5000 })
+      }
+    }
+  }, [lastMessage, user])
+
+  /* ── Polling fallback: alert for new pending jobs if WS missed them ── */
+  useEffect(() => {
+    if (!isAvailable || activeRequest) return
+
+    const poll = async () => {
+      try {
+        const res = await jobService.getPending()
+        const jobs: ServiceRequest[] = res.data ?? []
+        const newJobs = jobs.filter(
+          j => !seenPendingIds.current.has(j.id) && !declinedIds.current.has(j.id)
+        )
+        jobs.forEach(j => seenPendingIds.current.add(j.id))
+        setPendingCount(jobs.length)
+        if (newJobs.length > 0) {
+          // Only show if no alert already visible
+          setPendingAlert(prev => prev ?? newJobs[0])
+        }
+      } catch {}
+    }
+
+    const interval = setInterval(poll, 15000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAvailable, !!activeRequest])
+
+  /* ── Background location auto-update ────────────────────── */
+  useEffect(() => {
+    const secure = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
+    if (!isAvailable || !navigator.geolocation || !secure) return
+
+    const onPosition = (pos: GeolocationPosition) => {
+      const now = Date.now()
+      if (now - lastLocSentRef.current < LOC_THROTTLE_MS) return
+      lastLocSentRef.current = now
+      mechanicService.updateLocation(pos.coords.latitude, pos.coords.longitude).catch(() => {})
+    }
+
+    locWatchRef.current = navigator.geolocation.watchPosition(onPosition, () => {}, {
+      enableHighAccuracy: true,
+      maximumAge: 60_000,
+      timeout: 20_000,
+    })
+
+    return () => {
+      if (locWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(locWatchRef.current)
+        locWatchRef.current = null
+      }
+    }
+  }, [isAvailable])
+
+  const switchTab = (tab: Tab) => setActiveTab(tab)
+
+  /* ── Availability toggle ─────────────────────────────────── */
+  const handleToggleAvailable = async () => {
+    const next = !isAvailable
+    setIsAvailable(next)
+    try {
+      await mechanicService.updateAvailability(next)
+      localStorage.setItem('sp_availability', String(next))
+      if (next) {
+        localStorage.setItem('sp_last_online', String(Date.now()))
+        // Immediately broadcast current position when going online (HTTPS only)
+        const secure = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
+        if (navigator.geolocation && secure) {
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              lastLocSentRef.current = Date.now()
+              mechanicService.updateLocation(pos.coords.latitude, pos.coords.longitude).catch(() => {})
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 10_000 }
+          )
+        }
+      }
+      toast.success(next ? 'You are now Online' : 'You are now Offline')
+    } catch {
+      setIsAvailable(!next)
+      toast.error('Failed to update availability')
+    }
+  }
+
+  /* ── Auto-compute ETA via Google Directions on accept ────── */
+  const computeEtaMinutes = (driverLat: number, driverLng: number): Promise<number | null> => {
+    return new Promise(resolve => {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+      if (!apiKey || !navigator.geolocation) { resolve(null); return }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const g = (window as any).google?.maps
+          if (!g) { resolve(null); return }
+          new g.DirectionsService().route(
+            {
+              origin: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+              destination: { lat: driverLat, lng: driverLng },
+              travelMode: g.TravelMode.DRIVING,
+            },
+            (result: any, status: string) => {
+              if (status === 'OK') {
+                const secs = result?.routes?.[0]?.legs?.[0]?.duration?.value ?? null
+                resolve(secs != null ? Math.max(1, Math.ceil(secs / 60)) : null)
+              } else {
+                resolve(null)
+              }
+            }
+          )
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 8000 }
+      )
+    })
+  }
+
+  /* ── Job actions ─────────────────────────────────────────── */
+  const handleAlertAccept = async (request: ServiceRequest) => {
+    try {
+      // Compute ETA from current position to driver's location
+      let etaMinutes: number | null = null
+      if (request.location_lat && request.location_lng) {
+        etaMinutes = await computeEtaMinutes(request.location_lat, request.location_lng)
+      }
+      await jobService.accept(request.id, etaMinutes)
+      // Accepting means you're heading out — start the journey immediately so
+      // there's no separate "Begin Journey" tap to forget. The driver's live
+      // map + ETA start right away.
+      await jobService.updateStatus(request.id, 'en_route', { eta_minutes: SIM_MINUTES })
+      const now = new Date().toISOString()
+      const active = { ...request, status: 'en_route' as const, accepted_at: now, en_route_at: now, eta_minutes: SIM_MINUTES }
+      setActiveRequest(active)
+      setPendingAlert(null)
+      setPendingCount(c => Math.max(0, c - 1))
+      // Picking up a job counts immediately toward Today / This-Week.
+      loadHistoryStats(mechIdRef.current)
+      switchTab('jobs')
+      toast.success("Job accepted — you're on your way! The driver has been notified.")
+    } catch {
+      toast.error('Failed to accept job')
+    }
+  }
+
+  const handleAlertDecline = (request: ServiceRequest) => {
+    declinedIds.current.add(request.id)
+    setPendingAlert(null)
+    toast.info('Job declined.')
+    jobService.reject(request.id).catch(() => {})
+  }
+
+  const handleJobCompleted = () => {
+    setActiveRequest(null)
+    switchTab('earnings')
+    toast.success('Job completed! Payment is being processed.')
+  }
+
+  const providerType = profile?.provider_type ?? user?.provider_type ?? 'mechanic'
+  const providerName = profile?.full_name ?? user?.full_name ?? 'Provider'
+  const spn = (profile as unknown as { spn?: string | null })?.spn
+    ?? (user as unknown as { spn?: string | null })?.spn
+    ?? null
+
+  return (
+    <>
+      <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', overflowX: 'hidden' }}>
+
+        {activeTab === 'home' && (
+          <TopHeader
+            providerName={providerName}
+            providerType={providerType}
+            spn={spn}
+            isAvailable={isAvailable}
+            onToggleAvailable={handleToggleAvailable}
+            unreadCount={unreadCount}
+            onBellClick={() => {
+              setUnreadCount(0)
+              // If a driver messaged us, jump straight into that chat; otherwise the list
+              if (lastChatReqRef.current) {
+                const rid = lastChatReqRef.current
+                lastChatReqRef.current = null
+                navigate(`/chat/${rid}`)
+              } else {
+                navigate('/notifications')
+              }
+            }}
+            onAvatarClick={() => switchTab('profile')}
+          />
+        )}
+
+        <div style={{ paddingBottom: 112, minHeight: '100vh' }}>
+          {activeTab === 'home' && (
+            <Home
+              isAvailable={isAvailable}
+              profile={profile}
+              pendingCount={pendingCount}
+              activeRequest={activeRequest}
+              todayCount={todayCount}
+              weekCount={weekCount}
+              handledJobs={handledJobs}
+              ratingRows={ratingRows}
+              onGoToJobs={() => switchTab('jobs')}
+              onGoToEarnings={() => switchTab('earnings')}
+            />
+          )}
+          {activeTab === 'jobs' && (
+            <Jobs
+              isAvailable={isAvailable}
+              pendingAlert={pendingAlert}
+              onAlertAccept={handleAlertAccept}
+              onAlertDecline={handleAlertDecline}
+              lastMessage={lastMessage}
+              activeRequest={activeRequest}
+              sendMessage={sendMessage}
+              onJobCompleted={handleJobCompleted}
+            />
+          )}
+          {activeTab === 'earnings' && <Earnings />}
+          {activeTab === 'profile'  && <Profile />}
+        </div>
+
+        <BottomNav
+          activeTab={activeTab}
+          onChange={switchTab}
+          hasActiveJob={!!activeRequest}
+          hasPendingAlert={!!pendingAlert}
+        />
+      </div>
+
+      {/* Incoming request modal — renders above everything regardless of active tab */}
+      {pendingAlert && isAvailable && !activeRequest && (
+        <IncomingRequestModal
+          request={pendingAlert}
+          onAccept={() => handleAlertAccept(pendingAlert)}
+          onDecline={() => handleAlertDecline(pendingAlert)}
+        />
+      )}
+
+    </>
+  )
+}

@@ -1,0 +1,340 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@layer base {
+  :root {
+    /* Motofix Yellow Theme */
+    --background: 220 20% 6%;
+    --foreground: 45 100% 95%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 45 100% 95%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 45 100% 95%;
+
+    /* Golden Yellow Primary */
+    --primary: 48 100% 50%;
+    --primary-foreground: 220 20% 6%;
+
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 45 100% 95%;
+
+    --muted: 220 15% 18%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 48 90% 45%;
+    --accent-foreground: 220 20% 6%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 20% 6%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+    --ring: 48 100% 50%;
+
+    --radius: 1rem;
+
+    /* Custom Motofix tokens */
+    --glow-yellow: 0 0 20px hsl(48 100% 50% / 0.3);
+    --glow-yellow-intense: 0 0 40px hsl(48 100% 50% / 0.5);
+
+    /* Inline-style tokens (default = dark) */
+    --page-bg:    hsl(220, 20%, 6%);
+    --surface-1:  rgba(255,255,255,0.025);
+    --surface-2:  rgba(255,255,255,0.04);
+    --surface-3:  rgba(255,255,255,0.05);
+    --surface-4:  rgba(255,255,255,0.07);
+    --surface-5:  rgba(255,255,255,0.10);
+    --text-hi:    rgba(255,255,255,0.88);
+    --text-md:    rgba(255,255,255,0.60);
+    --text-lo:    rgba(255,255,255,0.45);
+    --text-dim:   rgba(255,255,255,0.35);
+    --text-faint: rgba(255,255,255,0.20);
+    --text-ghost: rgba(255,255,255,0.12);
+    --border-1:   rgba(255,255,255,0.05);
+    --border-2:   rgba(255,255,255,0.08);
+    --border-3:   rgba(255,255,255,0.10);
+    --border-4:   rgba(255,255,255,0.14);
+    --nav-bg:     rgba(14,17,27,0.97);
+    --overlay-bg: rgba(8,9,15,0.92);
+    --card-shadow: none;
+    --input-bg:   rgba(255,255,255,0.05);
+    --sos-bg:            #ff2d2d;
+    --sos-border-color:  transparent;
+    --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
+    --sos-hover-bg:      linear-gradient(135deg, #d41a1a 0%, #aa0f0f 100%);
+    --sos-hover-shadow:  0 16px 56px rgba(180,20,20,0.65), 0 0 0 2px rgba(212,26,26,0.35);
+    --sos-label:         rgba(255,255,255,0.80);
+    --sos-title:         #ffffff;
+    --sos-sub:           rgba(255,255,255,0.68);
+    --sos-text-shadow:   0 1px 6px rgba(0,0,0,0.30);
+    --sos-ring-1:        rgba(255,255,255,0.13);
+    --sos-ring-2:        rgba(255,255,255,0.27);
+    --sos-dot-bg:        rgba(0,0,0,0.22);
+    --sos-dot-border:    rgba(255,255,255,0.50);
+    --status-online-bg:      rgba(34,197,94,0.10);
+    --status-online-border:  rgba(34,197,94,0.30);
+    --status-online-color:   #86efac;
+    --status-online-dot:     #4ade80;
+    --status-offline-bg:     rgba(239,68,68,0.10);
+    --status-offline-border: rgba(239,68,68,0.30);
+    --status-offline-color:  #f87171;
+    --status-offline-dot:    #ef4444;
+    --accent-blue:           #60A5FA;
+    --accent-amber:          #FCD34D;
+    --accent-green:          #4ade80;
+
+    /* OutOfFuelFlow sheet tokens */
+    --oof-sheet:      hsl(220,20%,8%);
+    --oof-surface:    rgba(255,255,255,0.05);
+    --oof-border:     rgba(255,255,255,0.10);
+    --oof-divider:    rgba(255,255,255,0.06);
+    --oof-text-hi:    rgba(255,255,255,0.92);
+    --oof-text-md:    rgba(255,255,255,0.68);
+    --oof-text-lo:    rgba(255,255,255,0.50);
+    --oof-text-faint: rgba(255,255,255,0.35);
+  }
+
+  .dark {
+    --background: 220 20% 6%;
+    --foreground: 45 100% 95%;
+    --card: 220 18% 10%;
+    --card-foreground: 45 100% 95%;
+    --popover: 220 18% 10%;
+    --popover-foreground: 45 100% 95%;
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 45 100% 95%;
+    --muted: 220 15% 18%;
+    --muted-foreground: 220 10% 55%;
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+
+    /* Inline-style tokens */
+    --page-bg:    hsl(220, 20%, 6%);
+    --surface-1:  rgba(255,255,255,0.025);
+    --surface-2:  rgba(255,255,255,0.04);
+    --surface-3:  rgba(255,255,255,0.05);
+    --surface-4:  rgba(255,255,255,0.07);
+    --surface-5:  rgba(255,255,255,0.10);
+    --text-hi:    rgba(255,255,255,0.88);
+    --text-md:    rgba(255,255,255,0.60);
+    --text-lo:    rgba(255,255,255,0.45);
+    --text-dim:   rgba(255,255,255,0.35);
+    --text-faint: rgba(255,255,255,0.20);
+    --text-ghost: rgba(255,255,255,0.12);
+    --border-1:   rgba(255,255,255,0.05);
+    --border-2:   rgba(255,255,255,0.08);
+    --border-3:   rgba(255,255,255,0.10);
+    --border-4:   rgba(255,255,255,0.14);
+    --nav-bg:     rgba(14,17,27,0.97);
+    --overlay-bg: rgba(8,9,15,0.92);
+    --card-shadow: none;
+    --input-bg:   rgba(255,255,255,0.05);
+    --sos-bg:            #ff2d2d;
+    --sos-border-color:  transparent;
+    --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
+    --sos-hover-bg:      linear-gradient(135deg, #d41a1a 0%, #aa0f0f 100%);
+    --sos-hover-shadow:  0 16px 56px rgba(180,20,20,0.65), 0 0 0 2px rgba(212,26,26,0.35);
+    --sos-label:         rgba(255,255,255,0.80);
+    --sos-title:         #ffffff;
+    --sos-sub:           rgba(255,255,255,0.68);
+    --sos-text-shadow:   0 1px 6px rgba(0,0,0,0.30);
+    --sos-ring-1:        rgba(255,255,255,0.13);
+    --sos-ring-2:        rgba(255,255,255,0.27);
+    --sos-dot-bg:        rgba(0,0,0,0.22);
+    --sos-dot-border:    rgba(255,255,255,0.50);
+    --status-online-bg:      rgba(34,197,94,0.10);
+    --status-online-border:  rgba(34,197,94,0.30);
+    --status-online-color:   #86efac;
+    --status-online-dot:     #4ade80;
+    --status-offline-bg:     rgba(239,68,68,0.10);
+    --status-offline-border: rgba(239,68,68,0.30);
+    --status-offline-color:  #f87171;
+    --status-offline-dot:    #ef4444;
+    --accent-blue:           #60A5FA;
+    --accent-amber:          #FCD34D;
+
+    /* OutOfFuelFlow sheet tokens */
+    --oof-sheet:      hsl(220,20%,8%);
+    --oof-surface:    rgba(255,255,255,0.05);
+    --oof-border:     rgba(255,255,255,0.10);
+    --oof-divider:    rgba(255,255,255,0.06);
+    --oof-text-hi:    rgba(255,255,255,0.92);
+    --oof-text-md:    rgba(255,255,255,0.68);
+    --oof-text-lo:    rgba(255,255,255,0.50);
+    --oof-text-faint: rgba(255,255,255,0.35);
+  }
+
+  .light {
+    --background: 40 30% 96%;
+    --foreground: 220 25% 6%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 12%;
+
+    /* Keep golden yellow primary */
+    --primary: 38 95% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 20% 90%;
+    --secondary-foreground: 220 25% 12%;
+
+    --muted: 40 15% 88%;
+    --muted-foreground: 220 10% 30%;
+
+    --accent: 38 90% 44%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 10%;
+    --input: 40 15% 88%;
+    --ring: 38 95% 48%;
+
+    --glow-yellow: 0 0 20px hsl(38 95% 48% / 0.2);
+    --glow-yellow-intense: 0 0 40px hsl(38 95% 48% / 0.35);
+
+    /* Inline-style tokens */
+    --page-bg:    hsl(40, 25%, 94%);
+    --surface-1:  #ffffff;
+    --surface-2:  rgba(0,0,0,0.04);
+    --surface-3:  rgba(0,0,0,0.06);
+    --surface-4:  rgba(0,0,0,0.08);
+    --surface-5:  rgba(0,0,0,0.11);
+    --text-hi:    rgba(0,0,0,0.96);
+    --text-md:    rgba(0,0,0,0.75);
+    --text-lo:    rgba(0,0,0,0.62);
+    --text-dim:   rgba(0,0,0,0.52);
+    --text-faint: rgba(0,0,0,0.40);
+    --text-ghost: rgba(0,0,0,0.24);
+    --border-1:   rgba(0,0,0,0.30);
+    --border-2:   rgba(0,0,0,0.85);
+    --border-3:   rgba(0,0,0,0.90);
+    --border-4:   rgba(0,0,0,0.95);
+    --nav-bg:     rgba(255,253,249,0.97);
+    --overlay-bg: rgba(250,248,244,0.97);
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+    --input-bg:   #ffffff;
+    --sos-bg:            #ff2d2d;
+    --sos-border-color:  transparent;
+    --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
+    --sos-hover-bg:      linear-gradient(135deg, #d41a1a 0%, #aa0f0f 100%);
+    --sos-hover-shadow:  0 16px 56px rgba(180,20,20,0.65), 0 0 0 2px rgba(212,26,26,0.35);
+    --sos-label:         rgba(255,255,255,0.80);
+    --sos-title:         #ffffff;
+    --sos-sub:           rgba(255,255,255,0.68);
+    --sos-text-shadow:   0 1px 6px rgba(0,0,0,0.30);
+    --sos-ring-1:        rgba(255,255,255,0.13);
+    --sos-ring-2:        rgba(255,255,255,0.27);
+    --sos-dot-bg:        rgba(0,0,0,0.22);
+    --sos-dot-border:    rgba(255,255,255,0.50);
+    --status-online-bg:      rgba(22,163,74,0.10);
+    --status-online-border:  rgba(22,163,74,0.35);
+    --status-online-color:   #15803d;
+    --status-online-dot:     #16a34a;
+    --status-offline-bg:     rgba(220,38,38,0.09);
+    --status-offline-border: rgba(220,38,38,0.30);
+    --status-offline-color:  #b91c1c;
+    --status-offline-dot:    #dc2626;
+    --accent-blue:           #1d4ed8;
+    --accent-amber:          #b45309;
+    --accent-green:          #15803d;
+
+    /* OutOfFuelFlow sheet tokens */
+    --oof-sheet:      hsl(0,0%,98%);
+    --oof-surface:    rgba(0,0,0,0.04);
+    --oof-border:     rgba(0,0,0,0.10);
+    --oof-divider:    rgba(0,0,0,0.07);
+    --oof-text-hi:    rgba(0,0,0,0.92);
+    --oof-text-md:    rgba(0,0,0,0.65);
+    --oof-text-lo:    rgba(0,0,0,0.52);
+    --oof-text-faint: rgba(0,0,0,0.38);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    min-height: 100dvh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+  }
+
+  .glow-primary {
+    box-shadow: var(--glow-yellow);
+  }
+
+  .glow-primary-intense {
+    box-shadow: var(--glow-yellow-intense);
+  }
+}
+
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 1rem);
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 20px hsl(48 100% 50% / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 30px hsl(48 100% 50% / 0.5);
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.4s ease-out forwards;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out forwards;
+  }
+}

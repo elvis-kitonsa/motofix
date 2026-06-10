@@ -1,0 +1,172 @@
+/* ── Dark theme (default) ─────────────────────────────────────────────── */
+:root,
+html.dark {
+  --foreground:  45 100% 95%;
+  --bg:          hsl(220, 20%, 6%);
+  --surface-1:   rgba(255,255,255,0.025);
+  --surface-2:   rgba(255,255,255,0.040);
+  --surface-3:   rgba(255,255,255,0.055);
+  --surface-4:   rgba(255,255,255,0.075);
+  --surface-5:   rgba(255,255,255,0.10);
+  --input-bg:    rgba(255,255,255,0.050);
+  --text-hi:     rgba(255,255,255,0.88);
+  --text-md:     rgba(255,255,255,0.60);
+  --text-lo:     rgba(255,255,255,0.45);
+  --text-dim:    rgba(255,255,255,0.35);
+  --text-faint:  rgba(255,255,255,0.20);
+  --text-ghost:  rgba(255,255,255,0.12);
+  --border-1:    rgba(255,255,255,0.05);
+  --border-2:    rgba(255,255,255,0.08);
+  --border-3:    rgba(255,255,255,0.10);
+  --border-4:    rgba(255,255,255,0.14);
+  --nav-bg:      rgba(9,12,24,0.97);
+  --nav-solid:   hsl(220, 24%, 7%);
+  --header-bg:   rgba(7,9,22,0.94);
+  --sheet-bg:    rgba(9,11,24,0.99);
+  --overlay-bg:  rgba(7,9,22,0.95);
+  --page-bg:     hsl(220, 20%, 6%);
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.15);
+  --glow-amber:  0 0 20px rgba(245,158,11,0.28);
+  --glow-amber-intense: 0 0 40px rgba(245,158,11,0.50);
+  --grid-line:   rgba(255,255,255,0.05);
+
+  /* Online / Offline status */
+  --status-online-bg:      rgba(34,197,94,0.10);
+  --status-online-border:  rgba(34,197,94,0.30);
+  --status-online-color:   #86efac;
+  --status-online-dot:     #4ade80;
+  --status-offline-bg:     rgba(255,255,255,0.06);
+  --status-offline-border: rgba(255,255,255,0.12);
+  --status-offline-color:  rgba(255,255,255,0.55);
+  --status-offline-dot:    rgba(255,255,255,0.30);
+
+  /* "Go Live" hero block */
+  --live-bg:          linear-gradient(135deg, #16a34a 0%, #0f7a37 100%);
+  --live-shadow:      0 12px 48px rgba(74,222,128,0.35);
+  --live-border:      transparent;
+  --live-label:       rgba(255,255,255,0.80);
+  --live-title:       #ffffff;
+  --live-sub:         rgba(255,255,255,0.68);
+  --live-ring-1:      rgba(255,255,255,0.13);
+  --live-ring-2:      rgba(255,255,255,0.27);
+  --live-dot-bg:      rgba(0,0,0,0.22);
+  --live-dot-border:  rgba(255,255,255,0.50);
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────── */
+html.light {
+  --foreground:  220 25% 6%;
+  --bg:          hsl(220, 20%, 96%);
+  --page-bg:     hsl(220, 20%, 96%);
+  --surface-1:   #ffffff;
+  --surface-2:   rgba(0,0,0,0.04);
+  --surface-3:   rgba(0,0,0,0.06);
+  --surface-4:   rgba(0,0,0,0.08);
+  --surface-5:   rgba(0,0,0,0.11);
+  --input-bg:    #ffffff;
+  --text-hi:     #000000;
+  --text-md:     rgba(0,0,0,0.85);
+  --text-lo:     rgba(0,0,0,0.72);
+  --text-dim:    rgba(0,0,0,0.62);
+  --text-faint:  rgba(0,0,0,0.55);
+  --text-ghost:  rgba(0,0,0,0.38);
+  --border-1:    rgba(0,0,0,0.30);
+  --border-2:    rgba(0,0,0,0.85);
+  --border-3:    rgba(0,0,0,0.90);
+  --border-4:    rgba(0,0,0,0.95);
+  --nav-bg:      rgba(245,247,252,0.97);
+  --nav-solid:   hsl(220, 20%, 96%);
+  --header-bg:   rgba(245,247,252,0.97);
+  --sheet-bg:    rgba(242,244,250,0.99);
+  --overlay-bg:  rgba(242,244,250,0.97);
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+  --glow-amber:  0 0 18px rgba(217,119,6,0.22);
+  --glow-amber-intense: 0 0 36px rgba(217,119,6,0.38);
+  --grid-line:   rgba(0,0,0,0.07);
+
+  --status-online-bg:      rgba(22,163,74,0.10);
+  --status-online-border:  rgba(22,163,74,0.35);
+  --status-online-color:   #15803d;
+  --status-online-dot:     #16a34a;
+  --status-offline-bg:     rgba(0,0,0,0.06);
+  --status-offline-border: rgba(0,0,0,0.14);
+  --status-offline-color:  rgba(0,0,0,0.55);
+  --status-offline-dot:    rgba(0,0,0,0.32);
+
+  --live-bg:          linear-gradient(135deg, #16a34a 0%, #0f7a37 100%);
+  --live-shadow:      0 12px 48px rgba(74,222,128,0.35);
+  --live-border:      transparent;
+  --live-label:       rgba(255,255,255,0.80);
+  --live-title:       #ffffff;
+  --live-sub:         rgba(255,255,255,0.68);
+  --live-ring-1:      rgba(255,255,255,0.13);
+  --live-ring-2:      rgba(255,255,255,0.27);
+  --live-dot-bg:      rgba(0,0,0,0.22);
+  --live-dot-border:  rgba(255,255,255,0.50);
+}
+
+/* ── Utility classes ───────────────────────────────────────────────────── */
+
+.glass-card {
+  background: var(--surface-2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-2);
+  box-shadow: var(--card-shadow);
+}
+
+.glow-amber {
+  box-shadow: var(--glow-amber);
+}
+
+.glow-amber-intense {
+  box-shadow: var(--glow-amber-intense);
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+@keyframes pulse-glow-amber {
+  0%, 100% { box-shadow: 0 0 20px rgba(245,158,11,0.28); }
+  50%       { box-shadow: 0 0 36px rgba(245,158,11,0.52); }
+}
+.animate-pulse-glow {
+  animation: pulse-glow-amber 2.2s ease-in-out infinite;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-hi);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; ms-overflow-style: none; }
+
+input, textarea, button { font-family: inherit; }

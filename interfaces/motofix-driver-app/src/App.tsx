@@ -1,0 +1,312 @@
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BottomNav } from "@/components/BottomNav";
+import { PrivateRoute } from "@/components/PrivateRoute";
+import { NetworkBanner } from "@/components/NetworkBanner";
+import { RequestProvider } from "@/contexts/RequestContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { WebSocketProvider } from "@/contexts/WebSocketContext";
+import { QuoteModal } from "@/components/QuoteModal";
+import { useAuth } from "@/hooks/useAuth";
+import { useFcmToken } from "@/hooks/useFcmToken";
+import { useReminderScheduler } from "@/hooks/useReminderScheduler";
+import Splash from "./pages/Splash";
+import Welcome from "./pages/Welcome";
+import DriverEntry from "./pages/DriverEntry";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import Verifying from "./pages/Verifying";
+import Onboarding from "./pages/Onboarding";
+import Home from "./pages/Home";
+import RequestsList from "./pages/RequestsList";
+import CreateRequest from "./pages/CreateRequest";
+import Profile from "./pages/Profile";
+import RequestDetail from "./pages/RequestDetail";
+import LocatingUser from "./pages/LocatingUser";
+import DescribeIssue from "./pages/DescribeIssue";
+import FaultChat from "./pages/FaultChat";
+import GuidedDiagnosis from "./pages/GuidedDiagnosis";
+import NearbyMechanics from "./pages/NearbyMechanics";
+import SOSFaultPicker from "./pages/SOSFaultPicker";
+import EmergencyAlert from "./pages/EmergencyAlert";
+import InsurancePage from "./pages/InsurancePage";
+import Reminders from "./pages/Reminders";
+import ReminderSettings from "./pages/ReminderSettings";
+import NotificationsPage from "./pages/Notifications";
+import Settings from "./pages/Settings";
+import TermsOfService from "./pages/TermsOfService";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import RateMotofix from "./pages/RateMotofix";
+import ContactSupport from "./pages/ContactSupport";
+import DriverChat from "./pages/DriverChat";
+import SparePartsDealer from "./pages/SparePartsDealer";
+import PartsNeeded from "./pages/PartsNeeded";
+import PartsOrders from "./pages/PartsOrders";
+import NotFound from "./pages/NotFound";
+
+const queryClient = new QueryClient();
+
+function AppContent() {
+  const location = useLocation();
+  const { isAuthenticated } = useAuth();
+  useFcmToken(isAuthenticated);
+  useReminderScheduler(isAuthenticated);
+  const hideNavRoutes = ['/login', '/signup', '/welcome', '/driver-entry', '/', '/onboarding', '/verifying', '/reminders', '/reminder-settings', '/notifications', '/locating', '/describe-issue', '/fault-chat', '/diagnose', '/nearby-mechanics', '/emergency', '/insurance', '/terms-of-service', '/privacy-policy', '/rate-motofix', '/contact-support', '/spare-parts', '/parts-needed', '/parts-orders'];
+  const showBottomNav = !hideNavRoutes.includes(location.pathname) && !location.pathname.startsWith('/requests/');
+
+  return (
+    <>
+      <NetworkBanner />
+      <QuoteModal />
+      <Routes>
+        <Route path="/" element={<Splash />} />
+        <Route path="/welcome" element={<Welcome />} />
+        <Route path="/driver-entry" element={<DriverEntry />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/verifying" element={<Verifying />} />
+        <Route
+          path="/onboarding"
+          element={
+            <PrivateRoute>
+              <Onboarding />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/requests"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/requests/:id"
+          element={
+            <PrivateRoute>
+              <RequestDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <PrivateRoute>
+              <RequestsList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/locating"
+          element={
+            <PrivateRoute>
+              <LocatingUser />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/describe-issue"
+          element={
+            <PrivateRoute>
+              <DescribeIssue />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/create-request"
+          element={
+            <PrivateRoute>
+              <CreateRequest />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/sos"
+          element={
+            <PrivateRoute>
+              <SOSFaultPicker />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/emergency"
+          element={
+            <PrivateRoute>
+              <EmergencyAlert />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/insurance"
+          element={
+            <PrivateRoute>
+              <InsurancePage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/fault-chat"
+          element={
+            <PrivateRoute>
+              <FaultChat />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/diagnose"
+          element={
+            <PrivateRoute>
+              <GuidedDiagnosis />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/nearby-mechanics"
+          element={
+            <PrivateRoute>
+              <NearbyMechanics />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <PrivateRoute>
+              <Profile />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/reminders"
+          element={
+            <PrivateRoute>
+              <Reminders />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/reminder-settings"
+          element={
+            <PrivateRoute>
+              <ReminderSettings />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <PrivateRoute>
+              <NotificationsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <PrivateRoute>
+              <Settings />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/terms-of-service"
+          element={
+            <PrivateRoute>
+              <TermsOfService />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/privacy-policy"
+          element={
+            <PrivateRoute>
+              <PrivacyPolicy />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/rate-motofix"
+          element={
+            <PrivateRoute>
+              <RateMotofix />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/contact-support"
+          element={
+            <PrivateRoute>
+              <ContactSupport />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/requests/:requestId/chat"
+          element={
+            <PrivateRoute>
+              <DriverChat />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/spare-parts"
+          element={
+            <PrivateRoute>
+              <SparePartsDealer />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/parts-needed"
+          element={
+            <PrivateRoute>
+              <PartsNeeded />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/parts-orders"
+          element={
+            <PrivateRoute>
+              <PartsOrders />
+            </PrivateRoute>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+      {showBottomNav && <BottomNav />}
+    </>
+  );
+}
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster
+        position="top-center"
+        richColors
+        toastOptions={{
+          style: {
+            background: 'var(--overlay-bg)',
+            border: '1px solid var(--border-3)',
+            color: 'var(--text-hi)',
+          },
+        }}
+      />
+      <BrowserRouter>
+        <ThemeProvider>
+          <WebSocketProvider>
+            <RequestProvider>
+              <AppContent />
+            </RequestProvider>
+          </WebSocketProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+export default App;
