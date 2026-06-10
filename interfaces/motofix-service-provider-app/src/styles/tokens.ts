@@ -1,0 +1,17 @@
+export const C = {
+  bg:        'var(--bg)',
+  surface1:  'var(--surface-1)',
+  surface2:  'var(--surface-2)',
+  surface3:  'var(--surface-3)',
+  inputBg:   'var(--input-bg)',
+  amber:     '#F59E0B',
+  amberDark: '#D97706',
+  green:     '#4ADE80',
+  red:       '#F87171',
+  blue:      '#60A5FA',
+  purple:    '#A78BFA',
+  textHi:    'var(--text-hi)',
+  textMuted: 'var(--text-md)',
+  textFaint: 'var(--text-faint)',
+  border:    'var(--border-2)',
+}

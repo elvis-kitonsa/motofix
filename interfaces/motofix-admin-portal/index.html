@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Prevent theme flash: apply saved theme before React loads -->
+    <script>
+      (function () {
+        var t = localStorage.getItem('motofix_admin_theme') || 'dark';
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(t);
+      })();
+    </script>
+    <title>MOTOFIX Admin | Control Room</title>
+    <meta name="description" content="MOTOFIX Admin Dashboard - Manage motorcycle repairs and fuel delivery operations across Uganda" />
+    <meta name="author" content="MOTOFIX" />
+    <meta property="og:title" content="MOTOFIX Admin Dashboard" />
+    <meta property="og:description" content="Control room for managing motorcycle repairs and fuel delivery across Uganda" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer base {
+  :root {
+    /* ── Dark navy — matching reference design ───────────────────────── */
+    --background: 240 22% 7%;         /* #0e0e1a deepest navy page bg */
+    --foreground: 240 10% 94%;        /* #ededf4 near-white */
+
+    --card: 240 20% 15%;              /* #1e1e2e navy card */
+    --card-foreground: 240 10% 94%;
+
+    --popover: 240 20% 17%;
+    --popover-foreground: 240 10% 94%;
+
+    --primary: 43 96% 56%;            /* amber-yellow #fbbf24 */
+    --primary-foreground: 0 0% 5%;
+
+    --secondary: 240 18% 19%;
+    --secondary-foreground: 240 10% 94%;
+
+    --muted: 240 18% 17%;
+    --muted-foreground: 240 6% 45%;
+
+    --accent: 43 96% 56%;
+    --accent-foreground: 0 0% 5%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 92%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 92%;
+
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 5%;
+
+    --border: 240 15% 20%;
+    --input: 240 15% 20%;
+    --ring: 43 96% 56%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 240 22% 10%; /* #14142a sidebar navy */
+    --sidebar-foreground: 240 10% 94%;
+    --sidebar-primary: 43 96% 56%;
+    --sidebar-primary-foreground: 0 0% 5%;
+    --sidebar-accent: 240 18% 17%;
+    --sidebar-accent-foreground: 240 10% 94%;
+    --sidebar-border: 240 15% 18%;
+    --sidebar-ring: 43 96% 56%;
+
+    /* ── Admin component design tokens — dark ───────────────────────── */
+    --adm-surface:         #1e1e2e;
+    --adm-surface-2:       #242440;
+    --adm-surface-3:       #252545;
+    --adm-text:            #ededf4;
+    --adm-text-sub:        #c0c0d4;
+    --adm-muted:           #6b6b82;
+    --adm-amber:           #FFB300;
+    --adm-amber-dim:       rgba(255,179,0,0.10);
+    --adm-border:          rgba(255,179,0,0.22);
+    --adm-border-hi:       rgba(255,179,0,0.5);
+    --adm-green:           #34d399;
+    --adm-green-dim:       rgba(52,211,153,0.12);
+    --adm-red:             #f87171;
+    --adm-red-dim:         rgba(248,113,113,0.10);
+    --adm-cyan:            #22d3ee;
+    --adm-purple:          #a78bfa;
+    --adm-orange:          #f59e0b;
+    --adm-divider:         rgba(255,255,255,0.07);
+    --adm-track-bg:        rgba(255,255,255,0.06);
+    --adm-row-hover:       rgba(255,255,255,0.04);
+    --adm-list-hover:      rgba(255,255,255,0.06);
+    --adm-skeleton:        #252540;
+    --adm-search-bg:       #1a1a2a;
+    --adm-search-focus:    #1e1e2e;
+    --adm-popup-bg:        #1e1e2e;
+    --adm-popup-border:    rgba(255,255,255,0.10);
+    --adm-popup-shadow:    0 20px 60px rgba(0,0,0,0.65);
+    --adm-icon-hover:      #1e1e2e;
+    --adm-hover-shadow:    0 8px 32px rgba(255,179,0,0.14), 0 16px 40px rgba(0,0,0,0.3);
+    --adm-invert-text:     #000000;
+    --adm-card-border:     rgba(255,179,0,0.55);
+    --adm-card-shadow:     0 4px 20px rgba(0,0,0,0.22);
+
+    --chart-1: 43 96% 56%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 199 89% 48%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+/* ── Light mode overrides ─────────────────────────────────────────── */
+html.light {
+  --background: 210 18% 96%;
+  --foreground: 222 50% 6%;           /* near-black navy — max readability */
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 50% 6%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 50% 6%;
+
+  --primary: 38 92% 44%;
+  --primary-foreground: 222 47% 6%;
+
+  --secondary: 210 18% 88%;
+  --secondary-foreground: 222 50% 6%;
+
+  --muted: 210 18% 92%;
+  --muted-foreground: 215 28% 30%;    /* was 45% — now 30% = clearly readable dark slate */
+
+  --accent: 38 92% 44%;
+  --accent-foreground: 222 47% 6%;
+
+  --destructive: 0 70% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 63% 27%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 44%;
+  --warning-foreground: 222 47% 6%;
+
+  --border: 214 22% 76%;              /* slightly darker — more visible card edges */
+  --input: 214 22% 88%;
+  --ring: 38 92% 44%;
+
+  --sidebar-background: 210 20% 90%;
+  --sidebar-foreground: 222 50% 6%;   /* dark for all sidebar text */
+  --sidebar-primary: 38 92% 44%;
+  --sidebar-primary-foreground: 222 47% 6%;
+  --sidebar-accent: 210 18% 83%;
+  --sidebar-accent-foreground: 222 50% 6%;
+  --sidebar-border: 214 22% 74%;
+  --sidebar-ring: 38 92% 44%;
+
+  /* ── Admin component design tokens — light ─────────────────────── */
+  --adm-surface:         #ffffff;
+  --adm-surface-2:       #f0f2f8;
+  --adm-surface-3:       #e5e8f2;
+  --adm-text:            #0f1121;
+  --adm-text-sub:        #2d3152;
+  --adm-muted:           #374151;
+  --adm-amber:           #FFB300;
+  --adm-amber-dim:       rgba(255,179,0,0.10);
+  --adm-border:          rgba(255,179,0,0.35);
+  --adm-border-hi:       #FFB300;
+  --adm-hover-shadow:    0 0 0 2px #FFB300, 0 8px 28px rgba(255,179,0,0.22), 0 16px 40px rgba(0,0,0,0.10);
+  --adm-green:           #059669;
+  --adm-green-dim:       rgba(5,150,105,0.10);
+  --adm-red:             #dc2626;
+  --adm-red-dim:         rgba(220,38,38,0.08);
+  --adm-cyan:            #0891b2;
+  --adm-purple:          #7c3aed;
+  --adm-orange:          #e6a000;
+  --adm-divider:         rgba(0,0,0,0.09);
+  --adm-track-bg:        rgba(0,0,0,0.07);
+  --adm-row-hover:       rgba(0,0,0,0.04);
+  --adm-list-hover:      rgba(0,0,0,0.05);
+  --adm-skeleton:        #e2e5f0;
+  --adm-search-bg:       #eef0f8;
+  --adm-search-focus:    #ffffff;
+  --adm-popup-bg:        #ffffff;
+  --adm-popup-border:    rgba(0,0,0,0.10);
+  --adm-popup-shadow:    0 20px 60px rgba(0,0,0,0.18);
+  --adm-icon-hover:      #eef0f8;
+  --adm-hover-shadow:    0 0 0 2px #FFB300, 0 8px 28px rgba(255,179,0,0.22), 0 16px 40px rgba(0,0,0,0.10);
+  --adm-invert-text:     #ffffff;
+  --adm-card-border:     rgba(0,0,0,0.60);
+  --adm-card-shadow:     0 2px 8px rgba(0,0,0,0.10), 0 4px 20px rgba(0,0,0,0.07);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(38 92% 60%) 100%);
+  }
+
+  .gradient-success {
+    background: linear-gradient(135deg, hsl(var(--success)) 0%, hsl(142 76% 46%) 100%);
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 40px -10px hsl(var(--primary) / 0.5);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 30px -10px hsl(var(--success) / 0.4);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(38 92% 65%) 100%);
+  }
+
+  /* Spring-bounce lift on hover — cubic-bezier overshoots to create a natural bounce */
+  .card-hover-bounce {
+    transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 0.3s ease;
+    cursor: pointer;
+  }
+
+  .card-hover-bounce:hover {
+    transform: translateY(-7px) scale(1.025);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 2s linear infinite;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--secondary)) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+}
