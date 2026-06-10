@@ -1,0 +1,9 @@
+fastapi==0.124.0
+asyncpg==0.31.0
+python-jose[cryptography]==3.5.0
+uvicorn==0.38.0
+python-dotenv==1.2.1
+pydantic==2.12.5
+SQLAlchemy==2.0.44
+alembic
+aiofiles
