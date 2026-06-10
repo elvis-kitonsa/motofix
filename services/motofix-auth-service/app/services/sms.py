@@ -1,0 +1,52 @@
+import os
+import logging
+import httpx
+
+logger = logging.getLogger(__name__)
+
+_AT_USERNAME = os.getenv("AT_USERNAME", "sandbox")
+_AT_API_KEY  = os.getenv("AT_API_KEY", "")
+_AT_SMS_URL  = "https://api.africastalking.com/version1/messaging"
+
+
+def format_phone(phone: str) -> str:
+    """Normalise to international format +256XXXXXXXXX."""
+    phone = phone.strip()
+    if phone.startswith("+256"):
+        return phone
+    if phone.startswith("256"):
+        return "+" + phone
+    if phone.startswith("0"):
+        return "+256" + phone[1:]
+    return "+256" + phone
+
+
+def send_sms(phone: str, message: str) -> bool:
+    """Send SMS via Africa's Talking REST API; falls back to console log if not configured."""
+    formatted = format_phone(phone)
+
+    if not _AT_API_KEY:
+        logger.info("[SMS-LOG] To %s: %s", formatted, message)
+        return True
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(
+                _AT_SMS_URL,
+                headers={
+                    "apiKey": _AT_API_KEY,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                },
+                data={
+                    "username": _AT_USERNAME,
+                    "to": formatted,
+                    "message": message,
+                },
+            )
+        resp.raise_for_status()
+        logger.info("SMS sent to %s: %s", formatted, resp.json())
+        return True
+    except Exception as exc:
+        logger.error("SMS send failed to %s: %s", formatted, exc)
+        return False
