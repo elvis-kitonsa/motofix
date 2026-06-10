@@ -1,0 +1,31 @@
+{
+  "folders": [
+    // ── Backend Services ──────────────────────────────────────────────────────
+    { "name": "AUTH  — User Registration & Authentication", "path": "services/motofix-auth-service" },
+    { "name": "DISPATCH  — Request & Dispatch Management",  "path": "services/motofix-dispatch-service" },
+    { "name": "MATCHING  — Intelligent Mechanic Matching",  "path": "services/motofix-matching-service" },
+    { "name": "DIAGNOSIS  — Fault Diagnosis & Classification", "path": "services/motofix-diagnosis-service" },
+    { "name": "VERIFICATION  — Mechanic Verification",     "path": "services/motofix-verification-service" },
+    { "name": "ANALYTICS  — Analytics & Reporting",        "path": "services/motofix-analytics-service" },
+    { "name": "CORE  — Shared Utilities & Models",         "path": "services/motofix-core" },
+
+    // ── Frontend Interfaces ───────────────────────────────────────────────────
+    { "name": "UI  — Driver App",                          "path": "interfaces/motofix-driver-app" },
+    { "name": "UI  — Provider Dashboard",                  "path": "interfaces/motofix-provider-dashboard" },
+    { "name": "UI  — Admin Portal",                        "path": "interfaces/motofix-admin-portal" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/node_modules": true,
+      "**/*.db": true,
+      "**/.env": false
+    },
+    "search.exclude": {
+      "**/__pycache__": true,
+      "**/node_modules": true,
+      "**/*.db": true
+    }
+  }
+}

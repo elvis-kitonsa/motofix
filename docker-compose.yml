@@ -1,0 +1,316 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MOTOFIX — Full-stack docker-compose
+#
+# Usage:
+#   docker compose up -d                   # start everything
+#   docker compose up -d auth-service      # start one service
+#   docker compose logs -f <service>       # tail logs
+#   docker compose down -v                 # stop + remove volumes
+#
+# Frontend build args (API URLs baked in at build time):
+#   docker compose build \
+#     --build-arg VITE_API_AUTH_URL=https://auth.motofix.org \
+#     driver-app
+# ─────────────────────────────────────────────────────────────────────────────
+
+# This is the main docker-compose file for the entire Motofix application, including all backend services and frontend interfaces.
+#It defines the infrastructure (PostgreSQL) and all services with their dependencies, health checks, and environment variables.
+
+x-backend-common: &backend-common
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: motofix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres -q"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Backend Services ────────────────────────────────────────────────────────
+
+  auth-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-auth
+    build:
+      context: ./services/motofix-auth-service
+    env_file: ./services/motofix-auth-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_auth
+      DISPATCH_DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_dispatch
+      DISPATCH_SERVICE_URL: http://dispatch-service:8001
+      AT_USERNAME: ${AT_USERNAME:-sandbox}
+      AT_API_KEY: ${AT_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - auth_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8000/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  verification-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-verification
+    build:
+      context: ./services/motofix-verification-service
+    env_file: ./services/motofix-verification-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_mechanics
+      DISPATCH_SERVICE_URL: http://dispatch-service:8001
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8002/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  dispatch-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-dispatch
+    build:
+      context: ./services/motofix-dispatch-service
+    env_file: ./services/motofix-dispatch-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_dispatch
+      NOTIFICATIONS_URL: http://notifications-service:8004
+      MATCHING_SERVICE_URL: http://matching-service:8003
+      GOOGLE_GEOCODING_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+      MOMO_ENVIRONMENT: ${MOMO_ENVIRONMENT:-sandbox}
+      MOMO_CURRENCY: ${MOMO_CURRENCY:-EUR}
+      MOMO_COLLECTIONS_USER_ID: ${MOMO_COLLECTIONS_USER_ID:-}
+      MOMO_COLLECTIONS_API_KEY: ${MOMO_COLLECTIONS_API_KEY:-}
+      MOMO_COLLECTIONS_PRIMARY_KEY: ${MOMO_COLLECTIONS_PRIMARY_KEY:-}
+      MOMO_DISBURSEMENTS_USER_ID: ${MOMO_DISBURSEMENTS_USER_ID:-}
+      MOMO_DISBURSEMENTS_API_KEY: ${MOMO_DISBURSEMENTS_API_KEY:-}
+      MOMO_DISBURSEMENTS_PRIMARY_KEY: ${MOMO_DISBURSEMENTS_PRIMARY_KEY:-}
+      AIRTEL_ENV: ${AIRTEL_ENV:-sandbox}
+      AIRTEL_CLIENT_ID: ${AIRTEL_CLIENT_ID:-}
+      AIRTEL_CLIENT_SECRET: ${AIRTEL_CLIENT_SECRET:-}
+      AIRTEL_MERCHANT_PIN: ${AIRTEL_MERCHANT_PIN:-}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      verification-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_started
+      notifications-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8001/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  matching-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-matching
+    build:
+      context: ./services/motofix-matching-service
+    env_file: ./services/motofix-matching-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_matching
+      MECHANICS_SERVICE_URL: http://verification-service:8002
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      verification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8003/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  diagnosis-service:
+    container_name: motofix-diagnosis
+    init: true
+    restart: unless-stopped
+    build:
+      context: ./services/motofix-diagnosis-service
+    env_file: ./services/motofix-diagnosis-service/.env
+    ports:
+      - "8007:8007"
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8007/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  analytics-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-analytics
+    build:
+      context: ./services/motofix-analytics-service
+    env_file: ./services/motofix-analytics-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_dispatch
+      AUTH_DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_auth
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8005/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  insurance-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-insurance
+    build:
+      context: ./services/motofix-insurance-service
+    env_file: ./services/motofix-insurance-service/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_insurance
+    ports:
+      - "8006:8006"
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8006/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Frontend Interfaces ─────────────────────────────────────────────────────
+
+  driver-app:
+    container_name: motofix-driver-app
+    init: true
+    restart: unless-stopped
+    build:
+      context: ./interfaces/motofix-driver-app
+      args:
+        VITE_API_AUTH_URL: ${VITE_API_AUTH_URL:-http://localhost:8000}
+        VITE_API_REQUESTS_URL: ${VITE_API_REQUESTS_URL:-http://localhost:8001}
+        VITE_API_DIAGNOSIS_URL: ${VITE_API_DIAGNOSIS_URL:-http://localhost:8007}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_PROVIDER_URL: ${VITE_PROVIDER_URL:-http://localhost:8084}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-}
+    ports:
+      - "8083:80"
+
+  service-provider-app:
+    container_name: motofix-service-provider-app
+    init: true
+    restart: unless-stopped
+    build:
+      context: ./interfaces/motofix-service-provider-app
+      args:
+        VITE_API_AUTH_URL: ${VITE_API_AUTH_URL:-http://localhost:8000}
+        VITE_API_MECHANICS_URL: ${VITE_API_MECHANICS_URL:-http://localhost:8002}
+        VITE_API_REQUESTS_URL: ${VITE_API_REQUESTS_URL:-http://localhost:8001}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8001/ws/jobs}
+        VITE_API_DIAGNOSIS_URL: ${VITE_API_DIAGNOSIS_URL:-http://localhost:8007}
+        VITE_API_SUBSCRIPTIONS_URL: ${VITE_API_SUBSCRIPTIONS_URL:-http://localhost:8005}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-}
+    ports:
+      - "8084:80"
+
+  admin-portal:
+    container_name: motofix-admin-portal
+    init: true
+    restart: unless-stopped
+    build:
+      context: ./interfaces/motofix-admin-portal
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8005}
+        VITE_API_AUTH_URL: ${VITE_API_AUTH_URL:-http://localhost:8000}
+        VITE_API_REQUESTS_URL: ${VITE_API_REQUESTS_URL:-http://localhost:8001}
+        VITE_API_MECHANICS_URL: ${VITE_API_MECHANICS_URL:-http://localhost:8000/auth}
+    ports:
+      - "8082:80"
+
+  notifications-service:
+    <<: *backend-common
+    init: true
+    container_name: motofix-notifications
+    build:
+      context: ./services/motofix-analytics-service/notifications
+    env_file: ./services/motofix-analytics-service/notifications/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/motofix_dispatch
+      AT_USERNAME: ${AT_USERNAME:-sandbox}
+      AT_API_KEY: ${AT_API_KEY:-}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+    ports:
+      - "8004:8004"
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8004/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  core-service:
+    container_name: motofix-core
+    init: true
+    restart: unless-stopped
+    build:
+      context: ./services/motofix-core
+    env_file: ./services/motofix-core/.env
+    ports:
+      - "8008:8008"
+    healthcheck:
+      test: ["CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8008/health'')"']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  auth_uploads:
