@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Build frontend (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - motofix-driver-app
+          - motofix-service-provider-app
+          - motofix-admin-portal
+    defaults:
+      run:
+        working-directory: interfaces/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: interfaces/${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  backend:
+    name: Syntax-check Python services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Compile-check all services (no dependency install — requirements.txt
+      # files are UTF-16 and dependencies are not needed to catch syntax errors).
+      - run: python -m compileall -q services
