@@ -176,6 +176,19 @@ export function loadChecked(): CheckedMap {
   }
 }
 
+export function saveChecked(checks: CheckedMap) {
+  try { localStorage.setItem(CHECKED_KEY, JSON.stringify(checks)) } catch { /* ignore */ }
+  // Home badge + open Reminders page listen for this to recompute due count.
+  window.dispatchEvent(new Event('motofix:reminders-changed'))
+}
+
+/** Mark a checklist item satisfied as of `now` (used by the interactive reminder pop-ups). */
+export function markItemChecked(id: string, now: Date = new Date()) {
+  const checks = loadChecked()
+  checks[id] = now.toISOString()
+  saveChecked(checks)
+}
+
 export function lastCheckedAt(checks: CheckedMap, id: string): Date | null {
   const v = checks[id]
   if (!v) return null
