@@ -140,6 +140,25 @@ interface ActiveJobProps {
   onBack?: () => void
 }
 
+// Amber garage destination pin (a little house glyph)
+const GARAGE_PIN_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="54" viewBox="0 0 44 54">' +
+    '<path d="M22 2C11 2 2 11 2 22C2 36 22 52 22 52C22 52 42 36 42 22C42 11 33 2 22 2Z" fill="#F59E0B" stroke="#fff" stroke-width="2.5"/>' +
+    '<path d="M13 27 v-8 l9 -6 9 6 v8 z" fill="#fff"/>' +
+    '<rect x="19" y="22" width="6" height="5" fill="#F59E0B"/></svg>'
+)}`
+
+// Pull the driver's chosen tow-to garage out of the request description.
+function parseGarageDest(desc?: string | null): { name: string; area: string; phone: string; lat?: number; lng?: number } | null {
+  if (!desc || !/specified garage/i.test(desc)) return null
+  const name  = desc.match(/Name:\s*(.+)/i)?.[1]?.trim() ?? ''
+  const area  = desc.match(/Area:\s*(.+)/i)?.[1]?.trim() ?? ''
+  const phone = desc.match(/Phone:\s*(.+)/i)?.[1]?.trim() ?? ''
+  const m = desc.match(/Map:\s*([-\d.]+)\s*,\s*([-\d.]+)/i)
+  if (!name && !area) return null
+  return { name, area, phone, lat: m ? parseFloat(m[1]) : undefined, lng: m ? parseFloat(m[2]) : undefined }
+}
+
 export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJobCompleted, onBack }: ActiveJobProps) {
   const navigate = useNavigate()
   const [actionLoading, setActionLoading] = useState(false)
@@ -159,6 +178,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
 
   // Arrival detection
   const [arrivedToast, setArrivedToast] = useState(false)
+  const [bdOutcome, setBdOutcome] = useState<'fixed' | 'towing' | null>(null)  // breakdown: fixed on-site vs towed
   const arrivedTriggeredRef = useRef(false)
   const fiveMinMsgSentRef  = useRef(false)
 
@@ -665,6 +685,8 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   }
 
   const status = activeRequest.status
+  const garageDest = parseGarageDest((activeRequest as { description?: string } | null)?.description)
+  const driverPhotos = (activeRequest.media_files ?? []).filter(m => m.file_type === 'photo' || m.file_type === 'image').map(m => m.url)
   const myPos = effectiveLat != null && effectiveLng != null ? { lat: effectiveLat, lng: effectiveLng } : null
 
   // "I Have Arrived" is removed — only these manual transitions remain
@@ -675,6 +697,9 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     in_progress: { label: '✅ Service Provided – Done', next: 'awaiting_confirmation' },
   }
   const action = actionConfig[status]
+  // Breakdown Rescue jobs resolve on-site as either a repair or a tow.
+  const isBreakdown = /breakdown/i.test(`${activeRequest.issue_type ?? ''} ${activeRequest.service_type ?? ''}`)
+  const needOutcome = isBreakdown && status === 'in_progress' && !bdOutcome
   const isAwaitingConfirmation = status === 'awaiting_confirmation'
   // Who started the completion handshake. If the DRIVER (or the system) did, the
   // mechanic is the one who needs to confirm; otherwise the mechanic is waiting.
@@ -818,6 +843,9 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
               {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" />}
               {simRemaining && simRemaining.length >= 2 && (
                 <Polyline path={simRemaining} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
+              )}
+              {garageDest?.lat != null && garageDest?.lng != null && (
+                <Marker position={{ lat: garageDest.lat, lng: garageDest.lng }} icon={{ url: GARAGE_PIN_SVG, scaledSize: new (window as any).google.maps.Size(40, 49), anchor: new (window as any).google.maps.Point(20, 48) }} title={`Tow to: ${garageDest.name}`} />
               )}
             </GoogleMap>
           )
@@ -1153,12 +1181,72 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             </div>
           )}
 
+          {/* Driver's photo of the problem (so the mechanic can judge before quoting) */}
+          {driverPhotos.length > 0 && (
+            <div style={{ marginBottom: 12, padding: 12, borderRadius: 14, background: C.surface1, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.textHi, marginBottom: 8 }}>📷 Photo from the driver</div>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+                {driverPhotos.map((u, i) => (
+                  <a key={i} href={u} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                    <img src={u} alt="Reported damage" style={{ height: 120, borderRadius: 10, border: `1px solid ${C.border}`, objectFit: 'cover', display: 'block' }} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tow-to destination — driver specified their own garage */}
+          {garageDest && (
+            <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: C.surface1, border: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Navigation2 style={{ width: 15, height: 15, color: C.amber }} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.textHi, letterSpacing: '0.02em' }}>TOW TO THIS GARAGE</span>
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: C.textHi }}>{garageDest.name}</div>
+              {garageDest.area && <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 2 }}>📍 {garageDest.area}</div>}
+              {garageDest.phone && <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 2 }}>📞 {garageDest.phone}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 11 }}>
+                {garageDest.phone && (
+                  <a href={`tel:${garageDest.phone.replace(/[\s\-()]/g, '')}`} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 10, background: 'rgba(245,158,11,0.14)', border: `1px solid ${C.amber}55`, color: C.amber, textDecoration: 'none', fontSize: 12.5, fontWeight: 800 }}>Call garage</a>
+                )}
+                {garageDest.lat != null && (
+                  <a href={`https://www.google.com/maps/dir/?api=1&destination=${garageDest.lat},${garageDest.lng}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 10, background: C.surface3, border: `1px solid ${C.border}`, color: C.textMuted, textDecoration: 'none', fontSize: 12.5, fontWeight: 800 }}>Directions</a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Breakdown Rescue — resolve on-site as a repair or a tow */}
+          {isBreakdown && status === 'in_progress' && (
+            <div style={{ marginBottom: 12, padding: 14, borderRadius: 14, background: 'rgba(251,146,60,0.10)', border: '1px solid rgba(251,146,60,0.35)' }}>
+              <p style={{ fontSize: 12.5, fontWeight: 800, color: C.textHi, marginBottom: 4 }}>Breakdown outcome</p>
+              <p style={{ fontSize: 11.5, color: C.textFaint, marginBottom: 10, lineHeight: 1.5 }}>Could you fix it on the spot, or does it need towing?</p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => { setBdOutcome('fixed'); sendMessage({ type: 'chat_message', service_request_id: String(activeRequest.id), message: '✅ Good news — I fixed your vehicle on the spot.', sender_id: 'system' }) }}
+                  style={{ flex: 1, padding: '11px 0', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800, border: bdOutcome === 'fixed' ? `2px solid ${C.green}` : '1px solid rgba(255,255,255,0.15)', background: bdOutcome === 'fixed' ? 'rgba(34,197,94,0.16)' : C.surface3, color: bdOutcome === 'fixed' ? C.green : C.textMuted }}>
+                  🔧 Fixed on-site
+                </button>
+                <button
+                  onClick={() => { setBdOutcome('towing'); sendMessage({ type: 'chat_message', service_request_id: String(activeRequest.id), message: '🚛 It cannot be fixed here — I will tow your vehicle to a garage.', sender_id: 'system' }) }}
+                  style={{ flex: 1, padding: '11px 0', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800, border: bdOutcome === 'towing' ? `2px solid ${C.amber}` : '1px solid rgba(255,255,255,0.15)', background: bdOutcome === 'towing' ? 'rgba(251,146,60,0.18)' : C.surface3, color: bdOutcome === 'towing' ? C.amber : C.textMuted }}>
+                  🚛 Needs towing
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Main status action */}
           {action && (
             <>
               {action.disabled && (
                 <p style={{ fontSize: 12, color: C.amber, textAlign: 'center', marginBottom: 8, fontWeight: 600 }}>
                   Send a price quote to the driver before starting work
+                </p>
+              )}
+              {needOutcome && !action.disabled && (
+                <p style={{ fontSize: 12, color: C.amber, textAlign: 'center', marginBottom: 8, fontWeight: 600 }}>
+                  Choose the outcome (fixed or towing) above before completing
                 </p>
               )}
               <button
@@ -1172,13 +1260,13 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
                     updateStatus(action.next)
                   }
                 }}
-                disabled={actionLoading || !!action.disabled}
+                disabled={actionLoading || !!action.disabled || needOutcome}
                 style={{
                   width: '100%', height: 56, borderRadius: 14, border: 'none',
-                  background: action.disabled
+                  background: (action.disabled || needOutcome)
                     ? C.surface3
                     : `linear-gradient(135deg, ${C.amber}, ${C.amberDark})`,
-                  color: action.disabled ? C.textFaint : '#000',
+                  color: (action.disabled || needOutcome) ? C.textFaint : '#000',
                   fontWeight: 800, fontSize: 16,
                   cursor: actionLoading || action.disabled ? 'not-allowed' : 'pointer',
                   marginTop: 4,

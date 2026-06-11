@@ -9,7 +9,7 @@ import {
   Shield, TrendingUp, Star, HeartPulse,
   User, LogOut, SlidersHorizontal,
   BookOpen, X, Zap, Droplet, Wind, Circle,
-  Sun, Moon, Bell, ShoppingBag,
+  Sun, Moon, Bell, ShoppingBag, Youtube,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { requestsService } from '@/config/api';
@@ -20,12 +20,31 @@ import { toast } from 'sonner';
 
 /* ── All services (editorial list) ────────────────────────── */
 const ALL_SERVICES = [
-  { id: 'mechanic',   label: 'Mechanic & Repair', icon: Wrench,     color: '#F59E0B', desc: 'Engine · Tyres · Battery · Roadside repair' },
-  { id: 'towing',     label: 'Tow Truck & Breakdown', icon: Truck,  color: '#60A5FA', desc: 'Vehicle recovery & transport'                },
+  { id: 'mechanic',   label: 'Mechanic & Repair', icon: Wrench,     color: '#F59E0B', desc: 'On-site fix — engine, tyres, battery, electrical' },
+  { id: 'breakdown',  label: 'Breakdown Rescue',  icon: Truck, color: '#60A5FA', desc: "Won't move? We fix it on the spot — or tow it" },
   { id: 'ambulance',  label: 'Ambulance & Medical', icon: HeartPulse, color: '#f87171', desc: 'Medical emergency dispatch'                  },
   { id: 'insurance',  label: 'Insurance Coverage & Claims', icon: Shield, color: '#34D399', desc: 'File a claim or check your coverage'         },
   { id: 'spare_parts', label: 'Spare Parts & Self-Fix', icon: ShoppingBag, color: '#A78BFA', desc: 'Find dealers · order parts to fix it yourself' },
 ];
+
+/* ── Tool illustrations (inline SVG) shown before each guide's steps ── */
+const TOOL_ART: Record<string, JSX.Element> = {
+  'spare-tyre': (<svg viewBox="0 0 64 64" width="100%" height="100%"><circle cx="32" cy="32" r="27" fill="#1f2937" /><circle cx="32" cy="32" r="22" fill="#0b0f17" /><circle cx="32" cy="32" r="14" fill="#cbd5e1" /><circle cx="32" cy="32" r="5" fill="#64748b" /><g fill="#64748b"><circle cx="32" cy="23" r="2" /><circle cx="40" cy="29" r="2" /><circle cx="37" cy="39" r="2" /><circle cx="27" cy="39" r="2" /><circle cx="24" cy="29" r="2" /></g></svg>),
+  'jack': (<svg viewBox="0 0 64 64" width="100%" height="100%"><polygon points="32,12 52,32 32,52 12,32" fill="none" stroke="#94a3b8" strokeWidth="4" strokeLinejoin="round" /><line x1="12" y1="32" x2="52" y2="32" stroke="#64748b" strokeWidth="3" /><rect x="25" y="6" width="14" height="6" rx="2" fill="#475569" /><rect x="25" y="52" width="14" height="6" rx="2" fill="#475569" /><circle cx="50" cy="32" r="3" fill="#f59e0b" /></svg>),
+  'wheel-spanner': (<svg viewBox="0 0 64 64" width="100%" height="100%"><line x1="14" y1="14" x2="50" y2="50" stroke="#94a3b8" strokeWidth="6" strokeLinecap="round" /><line x1="50" y1="14" x2="14" y2="50" stroke="#94a3b8" strokeWidth="6" strokeLinecap="round" /><circle cx="32" cy="32" r="6" fill="#64748b" /><rect x="44" y="44" width="11" height="11" rx="2" fill="#475569" /></svg>),
+  'screwdriver': (<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="8" y="26" width="24" height="12" rx="6" fill="#ef4444" /><rect x="11" y="28" width="6" height="8" rx="2" fill="#dc2626" /><rect x="31" y="29" width="20" height="6" rx="1" fill="#cbd5e1" /><rect x="50" y="28" width="5" height="8" fill="#94a3b8" /></svg>),
+  'clips': (<svg viewBox="0 0 64 64" width="100%" height="100%"><g fill="#374151"><g><rect x="16" y="16" width="4" height="32" /><circle cx="18" cy="13" r="5" /><polygon points="18,22 9,29 27,29" /><polygon points="18,32 9,39 27,39" /></g><g transform="translate(22,6)"><rect x="16" y="16" width="4" height="26" /><circle cx="18" cy="13" r="5" /><polygon points="18,22 9,29 27,29" /></g></g></svg>),
+  'jumper-cables': (<svg viewBox="0 0 64 64" width="100%" height="100%"><path d="M16 18 q-6 14 4 24" stroke="#ef4444" strokeWidth="4" fill="none" strokeLinecap="round" /><path d="M48 18 q6 14 -4 24" stroke="#111827" strokeWidth="4" fill="none" strokeLinecap="round" /><polygon points="8,13 22,18 8,23 13,18" fill="#ef4444" /><polygon points="56,13 42,18 56,23 51,18" fill="#111827" /></svg>),
+  'engine-oil': (<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="27" y="6" width="10" height="8" rx="1" fill="#92400e" /><path d="M24 14 h16 v4 l5 6 v30 a3 3 0 0 1 -3 3 h-20 a3 3 0 0 1 -3 -3 v-30 l5 -6 z" fill="#f59e0b" /><rect x="22" y="33" width="20" height="13" rx="2" fill="#fff" opacity="0.85" /><text x="32" y="43" textAnchor="middle" fontSize="9" fontWeight="800" fill="#92400e">OIL</text></svg>),
+  'funnel': (<svg viewBox="0 0 64 64" width="100%" height="100%"><path d="M12 14 h40 l-13 20 v16 h-14 v-16 z" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="2" strokeLinejoin="round" /><rect x="25" y="48" width="14" height="6" fill="#94a3b8" /></svg>),
+  'rag': (<svg viewBox="0 0 64 64" width="100%" height="100%"><path d="M14 16 h32 a4 4 0 0 1 4 4 v24 a4 4 0 0 1 -4 4 h-32 a4 4 0 0 1 -4 -4 v-24 a4 4 0 0 1 4 -4 z" fill="#60a5fa" /><path d="M20 16 v32 M30 16 v32 M40 16 v32" stroke="#3b82f6" strokeWidth="2" opacity="0.5" /></svg>),
+  'cabin-filter': (<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="10" y="20" width="44" height="24" rx="3" fill="#475569" /><rect x="13" y="23" width="38" height="18" fill="#e5e7eb" /><path d="M15 23 l3 18 l3 -18 l3 18 l3 -18 l3 18 l3 -18 l3 18 l3 -18 l3 18 l3 -18" fill="none" stroke="#94a3b8" strokeWidth="2" /></svg>),
+  'wiper': (<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="8" y="34" width="48" height="5" rx="2.5" fill="#1f2937" /><rect x="10" y="31" width="44" height="3" rx="1.5" fill="#374151" /><rect x="28" y="22" width="6" height="14" rx="2" fill="#64748b" /><rect x="26" y="18" width="12" height="6" rx="2" fill="#475569" /></svg>),
+  'gloves': (<svg viewBox="0 0 64 64" width="100%" height="100%"><g fill="#f59e0b"><rect x="20" y="28" width="24" height="24" rx="5" /><rect x="21" y="14" width="5" height="18" rx="2.5" /><rect x="27" y="11" width="5" height="21" rx="2.5" /><rect x="33" y="11" width="5" height="21" rx="2.5" /><rect x="39" y="14" width="5" height="18" rx="2.5" /><rect x="13" y="30" width="11" height="7" rx="3.5" /></g><rect x="20" y="46" width="24" height="5" fill="#d97706" /></svg>),
+};
+function ToolIcon({ name }: { name: string }) {
+  return <>{TOOL_ART[name] ?? TOOL_ART['wheel-spanner']}</>;
+}
 
 /* ── Quick How-To guides ───────────────────────────────────── */
 const GUIDES = [
@@ -34,6 +53,13 @@ const GUIDES = [
     title: 'Change a Tyre',
     icon: Circle,
     color: '#f87171',
+    video: 'https://www.youtube.com/results?search_query=how+to+change+a+flat+car+tyre+step+by+step',
+    tools: [
+      { k: 'spare-tyre', label: 'Spare tyre' },
+      { k: 'jack', label: 'Car jack' },
+      { k: 'wheel-spanner', label: 'Wheel spanner' },
+      { k: 'gloves', label: 'Work gloves' },
+    ],
     steps: [
       'Park on a flat, solid surface away from traffic. Turn on your hazard lights and apply the handbrake firmly.',
       'Get the spare tyre, jack, and wheel spanner out of the boot.',
@@ -51,6 +77,12 @@ const GUIDES = [
     title: 'Fix a Loose Bumper',
     icon: Wrench,
     color: '#fcd34d',
+    video: 'https://www.youtube.com/results?search_query=how+to+fix+a+loose+car+bumper+clips',
+    tools: [
+      { k: 'screwdriver', label: 'Screwdriver set' },
+      { k: 'clips', label: 'Plastic push-clips' },
+      { k: 'gloves', label: 'Work gloves' },
+    ],
     steps: [
       'Park the car and turn it off. Walk around the bumper and identify exactly where it has come loose — look for missing clips, broken tabs, or fallen screws.',
       'For clips that have popped out — align the bumper back into position and press firmly until you hear or feel a click. Work from the centre outward.',
@@ -66,6 +98,11 @@ const GUIDES = [
     title: 'Jump-Start a Dead Battery',
     icon: Zap,
     color: '#fbbf24',
+    video: 'https://www.youtube.com/results?search_query=how+to+jump+start+a+car+dead+battery',
+    tools: [
+      { k: 'jumper-cables', label: 'Jumper cables' },
+      { k: 'gloves', label: 'Work gloves' },
+    ],
     steps: [
       'Park the working car nose-to-nose with the dead car so both batteries are within cable reach. Turn off both vehicles.',
       'Connect the RED cable to the POSITIVE (+) terminal of the dead battery first.',
@@ -83,6 +120,12 @@ const GUIDES = [
     title: 'Top Up Engine Oil',
     icon: Droplet,
     color: '#34d399',
+    video: 'https://www.youtube.com/results?search_query=how+to+check+and+top+up+engine+oil',
+    tools: [
+      { k: 'engine-oil', label: 'Correct engine oil' },
+      { k: 'funnel', label: 'Funnel' },
+      { k: 'rag', label: 'Clean rag' },
+    ],
     steps: [
       'Park on a flat surface and switch off the engine. Wait at least 5 minutes for the oil to drain back into the sump.',
       'Open the bonnet and locate the oil dipstick — it usually has a yellow or orange loop handle.',
@@ -99,6 +142,11 @@ const GUIDES = [
     title: 'AC Not Blowing Cold',
     icon: Wind,
     color: '#60a5fa',
+    video: 'https://www.youtube.com/results?search_query=car+ac+not+blowing+cold+air+how+to+fix',
+    tools: [
+      { k: 'cabin-filter', label: 'Cabin air filter' },
+      { k: 'rag', label: 'Clean cloth' },
+    ],
     steps: [
       'Start the engine and set the AC to the maximum fan speed and lowest temperature.',
       'Open the bonnet and look at the AC compressor (a belt-driven unit at the front of the engine). When AC is on, a clutch plate at the front should spin. If it is not spinning, the system has a problem.',
@@ -114,6 +162,11 @@ const GUIDES = [
     title: 'Replace Wiper Blades',
     icon: Wind,
     color: '#a78bfa',
+    video: 'https://www.youtube.com/results?search_query=how+to+replace+windscreen+wiper+blades',
+    tools: [
+      { k: 'wiper', label: 'New wiper blades' },
+      { k: 'rag', label: 'Clean cloth' },
+    ],
     steps: [
       'Turn on the ignition without starting the engine. Run the wipers once, then turn them off when they are upright in the middle of the windscreen. Turn off the ignition — this locks them in a raised position.',
       'Lift one wiper arm away from the windscreen. It will lock upright on its own.',
@@ -158,6 +211,32 @@ function GuideModal({ guide, onClose }: { guide: typeof GUIDES[0]; onClose: () =
           </button>
         </div>
         <div style={{ overflowY: 'auto', padding: '20px 20px 40px', scrollbarWidth: 'none' }}>
+          {guide.video && (
+            <a
+              href={guide.video}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ width: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, padding: '13px 0', borderRadius: 14, background: '#FF0000', color: '#fff', textDecoration: 'none', fontSize: 13.5, fontWeight: 800, marginBottom: 22, boxShadow: '0 6px 20px rgba(255,0,0,0.28)' }}
+            >
+              <Youtube style={{ width: 19, height: 19 }} /> Watch video tutorial
+            </a>
+          )}
+          {guide.tools.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <p style={{ color: 'var(--text-md)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 800, marginBottom: 12 }}>Tools you'll need</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                {guide.tools.map((t, i) => (
+                  <div key={i} style={{ background: 'var(--surface-1)', border: '1px solid var(--border-2)', borderRadius: 14, padding: '12px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 52, height: 52 }}><ToolIcon name={t.k} /></div>
+                    <span style={{ color: 'var(--text-md)', fontSize: 10.5, fontWeight: 700, textAlign: 'center', lineHeight: 1.25 }}>{t.label}</span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 12, lineHeight: 1.5 }}>Gather these before you start so you don't have to stop midway.</p>
+              <div style={{ height: 1, background: 'var(--border-2)', marginTop: 20 }} />
+            </div>
+          )}
+          <p style={{ color: guide.color, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 800, marginBottom: 16 }}>Step-by-step instructions</p>
           {guide.steps.map((step, i) => (
             <div key={i} style={{ display: 'flex', gap: 14, marginBottom: i < guide.steps.length - 1 ? 20 : 0 }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
@@ -222,6 +301,9 @@ export default function Home() {
   const [statusPrompt, setStatusPrompt] = useState<'going-offline' | 'going-online' | null>(null);
   const [remindersPending, setRemindersPending] = useState(0);
   const [selectedGuide, setSelectedGuide] = useState<typeof GUIDES[0] | null>(null);
+  const [breakdownPrompt, setBreakdownPrompt] = useState(false);
+  const [bdFix, setBdFix] = useState(true);
+  const [bdTow, setBdTow] = useState(true);
   const [sosBlocked,    setSosBlocked]    = useState(false);
   const [pendingReview, setPendingReview] = useState<{ requestId: string; mechanicName: string } | null>(null);
   const sosSheetRef  = useRef<HTMLDivElement>(null);
@@ -291,14 +373,14 @@ export default function Home() {
   const completed = history.filter(r => r.status === 'completed').length;
   const { question, firstName, initials } = greeting(user?.full_name);
 
-  const goRequest = (issueType?: string) => {
+  const goRequest = (issueType?: string, breakdownPrefs?: { fixOnSpot: boolean; allowTow: boolean }) => {
     if (hasActive) {
       setSosBlocked(true);
       return;
     }
     if (issueType) {
-      const serviceType = issueType === 'towing' ? 'towing_provider' : 'mechanic';
-      navigate('/locating', { state: { issueType, serviceType } });
+      const serviceType = issueType === 'towing' ? 'towing_provider' : issueType === 'breakdown' ? 'both' : 'mechanic';
+      navigate('/locating', { state: { issueType, serviceType, breakdownPrefs } });
     } else {
       navigate('/sos');
     }
@@ -387,6 +469,43 @@ export default function Home() {
           </>
         )}
 
+
+        {/* ── Breakdown Rescue pre-flight (asked before location) ── */}
+        {breakdownPrompt && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={() => setBreakdownPrompt(false)} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 70, width: 'min(92vw, 360px)', borderRadius: 24, background: 'var(--overlay-bg)', border: '1px solid var(--border-3)', boxShadow: '0 24px 70px rgba(0,0,0,0.7)', overflow: 'hidden' }}>
+              {/* header */}
+              <div style={{ padding: '24px 22px 6px', textAlign: 'center' }}>
+                <div style={{ width: 56, height: 56, borderRadius: 17, margin: '0 auto 14px', background: 'rgba(245,158,11,0.14)', border: '1.5px solid rgba(245,158,11,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 24px rgba(245,158,11,0.18)' }}>
+                  <Truck style={{ width: 27, height: 27, color: '#F59E0B' }} />
+                </div>
+                <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 19, marginBottom: 6 }}>Breakdown Rescue</p>
+                <p style={{ color: 'var(--text-lo)', fontSize: 12.5, lineHeight: 1.55, padding: '0 4px' }}>Two quick questions so we send the right help and agree the plan with you.</p>
+              </div>
+              {/* questions */}
+              <div style={{ padding: '16px 18px 4px' }}>
+                {[
+                  { key: 'fix', q: '🔧 Try to fix it on the spot first?', val: bdFix, set: setBdFix, yes: 'Yes, fix it', no: 'No, just tow' },
+                  { key: 'tow', q: '🚛 OK to tow it to a garage if the on-road repair fails?', val: bdTow, set: setBdTow, yes: 'Yes, tow it', no: 'No' },
+                ].map(({ key, q, val, set, yes, no }) => (
+                  <div key={key} style={{ background: 'var(--surface-1)', border: '1px solid var(--border-2)', borderRadius: 16, padding: '13px 13px 14px', marginBottom: 12 }}>
+                    <p style={{ color: 'var(--text-md)', fontSize: 13, fontWeight: 700, marginBottom: 11, lineHeight: 1.4 }}>{q}</p>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => set(true)} style={{ flex: 1, padding: '11px 0', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800, border: val ? '2px solid #F59E0B' : '1.5px solid var(--border-3)', background: val ? 'rgba(245,158,11,0.16)' : 'transparent', color: val ? '#F59E0B' : 'var(--text-faint)', transition: 'all 0.15s' }}>{yes}</button>
+                      <button onClick={() => set(false)} style={{ flex: 1, padding: '11px 0', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800, border: !val ? '2px solid #EF4444' : '1.5px solid var(--border-3)', background: !val ? 'rgba(239,68,68,0.14)' : 'transparent', color: !val ? '#EF4444' : 'var(--text-faint)', transition: 'all 0.15s' }}>{no}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* actions */}
+              <div style={{ display: 'flex', gap: 10, padding: '6px 18px 20px' }}>
+                <button onClick={() => setBreakdownPrompt(false)} style={{ flexShrink: 0, padding: '13px 18px', borderRadius: 14, border: '1px solid var(--border-3)', background: 'var(--surface-3)', color: 'var(--text-lo)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => { setBreakdownPrompt(false); goRequest('breakdown', { fixOnSpot: bdFix, allowTow: bdTow }); }} style={{ flex: 1, padding: '13px 0', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 8px 22px rgba(245,158,11,0.35)' }}>Find help <ChevronRight style={{ width: 17, height: 17 }} /></button>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ── SOS blocked — active request warning ── */}
         {sosBlocked && activeReq && (() => {
@@ -961,6 +1080,7 @@ export default function Home() {
                     if (id === 'ambulance') navigate('/emergency');
                     else if (id === 'insurance') navigate('/insurance');
                     else if (id === 'spare_parts') navigate('/spare-parts');
+                    else if (id === 'breakdown') { hasActive ? setSosBlocked(true) : setBreakdownPrompt(true); }
                     else if (id === 'mechanic' || id === 'towing') goRequest(id);
                   }}
                   onMouseEnter={() => !isLocked && setHoveredService(id)}

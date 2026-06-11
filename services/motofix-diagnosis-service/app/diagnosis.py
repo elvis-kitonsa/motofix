@@ -1,17 +1,82 @@
 """
-AI diagnosis logic — powered by Groq (llama-3.3-70b-versatile + llama-3.2-11b-vision-preview).
+AI diagnosis logic.
+  - Fault diagnosis (text + image): Claude Haiku 4.5 via the Anthropic SDK.
+  - Chatbot / guided triage / parts pricing / fuel advisor: Groq (llama-3.3-70b-versatile,
+    llama-3.2-90b-vision-preview).
 """
 
 import base64
 import json
 import logging
-from typing import List
+import os
+import re
+from typing import List, Optional
 
+from anthropic import AsyncAnthropic
 from groq import AsyncGroq
 
 from .schemas import ChatMessage, ChatResponse, DiagnosisResult
 
 logger = logging.getLogger(__name__)
+
+# ── Claude (Anthropic) client — powers text + image fault diagnosis ─────────────
+CLAUDE_MODEL = "claude-haiku-4-5"
+_ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+_anthropic: Optional[AsyncAnthropic] = (
+    AsyncAnthropic(api_key=_ANTHROPIC_API_KEY) if _ANTHROPIC_API_KEY else None
+)
+
+
+def _claude_text(resp) -> str:
+    """Concatenate the text blocks of a Claude Messages response."""
+    return "".join(
+        getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text"
+    ).strip()
+
+
+def _extract_json(text: str) -> str:
+    """Pull the JSON object out of a model reply (handles ``` fences / stray prose)."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    start, end = t.find("{"), t.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return t[start : end + 1]
+    return t
+
+
+def _diagnosis_fallback(image: bool = False) -> DiagnosisResult:
+    """Safe default when the AI is unavailable or returns something unparseable."""
+    return DiagnosisResult(
+        fault_category="other",
+        fault_description=(
+            "Could not analyse the image — please describe the fault in the chat."
+            if image
+            else "Automatic classification unavailable — a mechanic will assess on arrival."
+        ),
+        provider_type="mechanic",
+        severity="medium",
+        confidence=0.0,
+        recommended_actions=(
+            ["Describe your vehicle issue in text for better assistance"]
+            if image
+            else ["Stay in a safe location away from traffic", "Wait for assistance"]
+        ),
+        follow_up_questions=None,
+    )
+
+
+def _chat_fallback(reply: str = "I'm having trouble connecting right now. Please describe your vehicle problem briefly and we'll send the right help.") -> ChatResponse:
+    return ChatResponse(reply=reply, diagnosis_ready=False, diagnosis=None)
+
+
+def _as_claude_msgs(messages: List[ChatMessage]) -> list:
+    """ChatMessage[] → Claude messages; drop leading non-user turns (Claude needs messages[0] == user)."""
+    msgs = [{"role": m.role, "content": m.content} for m in messages]
+    while msgs and msgs[0]["role"] != "user":
+        msgs.pop(0)
+    return msgs
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
@@ -28,7 +93,9 @@ Analyse the vehicle fault input and respond ONLY with valid JSON matching this e
   "follow_up_questions": ["<question if more info is needed — omit array if none>"],
   "required_parts": [{"name": "<part>", "price_min": <UGX int>, "price_max": <UGX int>}],
   "service_fee_min": <UGX int>,
-  "service_fee_max": <UGX int>
+  "service_fee_max": <UGX int>,
+  "repair_fee_min": <UGX int>,
+  "repair_fee_max": <UGX int>
 }
 
 Spare-parts guidance (required_parts, service_fee_min, service_fee_max):
@@ -41,6 +108,16 @@ Spare-parts guidance (required_parts, service_fee_min, service_fee_max):
   Use whole UGX numbers, no commas or currency symbols. Be realistic for Uganda 2025
   (e.g. a saloon tube ~15000-35000, a small car battery ~250000-450000,
   brake pads ~80000-200000). These are rough public estimates, not a binding quote.
+
+Repair-vs-replace transparency (repair_fee_min, repair_fee_max):
+  Many faults can OFTEN be fixed on the spot WITHOUT buying a new part — estimate
+  the typical cost of that minor fix (labour + small consumables only), which is
+  much cheaper than replacement. Examples: tyre puncture patch/plug ~5000-20000;
+  dead battery jump-start or recharge ~10000-40000; loose/corroded terminal clean
+  & tighten ~5000-15000; bleed/adjust brakes ~20000-60000; reconnect/secure a
+  loose part ~5000-25000. If the fault truly cannot be repaired and ALWAYS needs a
+  new part, set both repair_fee fields to 0. The mechanic confirms which applies
+  after a quick inspection — so the driver isn't forced to buy new if a repair works.
 
 Fault categories:
   engine_failure, tyre_puncture, battery_dead, overheating, brake_failure,
@@ -229,26 +306,34 @@ async def guided_diagnose(answers: list, client: AsyncGroq) -> dict:
 
 _PARTS_PRICE_PROMPT = """You are MOTOBOT, MOTOFIX's friendly spare-parts pricing assistant for Uganda.
 Given a list of vehicle spare parts a driver wants to buy, return realistic CURRENT
-Ugandan market price ranges in UGX for each item.
+Ugandan market price ranges in UGX for each item — BOTH a brand-NEW range and a
+good-USED (second-hand) range.
 
 Respond ONLY with valid JSON (no extra text) in this exact shape:
 {
   "items": [
-    { "name": "<tidy part name>", "price_min": <int UGX>, "price_max": <int UGX>, "note": "<short tip / typical spec, max 8 words>" }
+    { "name": "<tidy part name>", "new_min": <int>, "new_max": <int>, "used_min": <int>, "used_max": <int>, "note": "<short tip, max 8 words>" }
   ]
 }
 
 Rules:
   - Whole UGX numbers only, no commas or currency symbols.
   - One entry per requested item, keeping the driver's order.
-  - Be realistic for Uganda 2025. Reference ranges (UGX):
-    inner tube 15000-35000; used tyre 80000-250000; new tyre 180000-450000;
-    small car battery 250000-450000; brake pads set 80000-200000;
-    spark plug 8000-25000 each; headlight bulb 10000-40000; wiper blade 12000-30000;
-    engine oil 4L 60000-140000; air filter 25000-70000; fan belt 20000-60000;
-    side mirror 40000-150000; radiator 150000-450000; alternator 200000-600000;
-    fuel pump 120000-380000; clutch plate 150000-400000; shock absorber 90000-260000.
-  - For vague or unknown items, give a sensible broad range and a helpful note.
+  - If a part is essentially never sold second-hand (spark plugs, engine oil, brake pads,
+    air/oil filters, wiper blades, inner tubes, fan belts), set used_min and used_max to 0.
+  - Be realistic for Uganda 2025. Reference (UGX) as new / used:
+    tyre new 180000-450000 / used 80000-250000;
+    car battery new 250000-450000 / used 120000-260000;
+    alternator new 200000-600000 / used 90000-300000;
+    starter motor new 180000-500000 / used 80000-260000;
+    side mirror new 60000-180000 / used 25000-90000;
+    headlight unit new 120000-400000 / used 50000-180000;
+    radiator new 150000-450000 / used 70000-220000;
+    fuel pump new 120000-380000 / used 60000-180000;
+    shock absorber new 90000-260000 / used 40000-120000;
+    brake pads (new only) 80000-200000; spark plug each 8000-25000;
+    engine oil 4L 60000-140000; air filter 25000-70000; inner tube 15000-35000.
+  - For vague/unknown items, give a sensible broad new range, used only if applicable, and a helpful note.
   - These are rough public estimates, not binding quotes."""
 
 
@@ -270,10 +355,17 @@ async def price_spare_parts(items: list[str], groq_client: AsyncGroq) -> dict:
     out = []
     for it in (data.get("items") or []):
         try:
+            nmin, nmax = int(it.get("new_min") or 0), int(it.get("new_max") or 0)
+            umin, umax = int(it.get("used_min") or 0), int(it.get("used_max") or 0)
+            # backward-compat overall range (min/max across whichever exist)
+            lows = [v for v in (nmin, umin) if v > 0]
+            highs = [v for v in (nmax, umax) if v > 0]
             out.append({
                 "name": str(it.get("name") or "").strip() or "Spare part",
-                "price_min": int(it.get("price_min") or 0),
-                "price_max": int(it.get("price_max") or 0),
+                "new_min": nmin, "new_max": nmax,
+                "used_min": umin, "used_max": umax,
+                "price_min": min(lows) if lows else 0,
+                "price_max": max(highs) if highs else 0,
                 "note": (str(it.get("note")).strip() if it.get("note") else None),
             })
         except (ValueError, TypeError):
@@ -301,7 +393,7 @@ async def fuel_advisor(car_model: str, fuel_type: str, groq_client: AsyncGroq) -
     return json.loads(raw)
 
 
-_CHATBOT_SYSTEM_PROMPT = """You are MOTOFIX AI, the intelligent assistant embedded in the MOTOFIX roadside assistance platform in Uganda.
+_CHATBOT_SYSTEM_PROMPT = """You are MOTOBOT, MOTOFIX's own AI assistant embedded in the MOTOFIX roadside assistance platform in Uganda. When asked who you are, say you are MOTOBOT.
 
 ━━ SCOPE — STRICT ━━
 You may ONLY discuss topics that fall within the MOTOFIX platform context:
@@ -384,231 +476,185 @@ RULES:
 
 # ── Text diagnosis ────────────────────────────────────────────────────────────
 
-async def diagnose_text(description: str, client: AsyncGroq) -> DiagnosisResult:
+async def diagnose_text(description: str, client: AsyncGroq | None = None) -> DiagnosisResult:
+    # `client` is legacy (Groq, kept for existing call sites) — diagnosis runs on Claude.
+    if not _anthropic:
+        return _diagnosis_fallback()
     try:
-        response = await client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": _DIAGNOSIS_SYSTEM_PROMPT},
-                {"role": "user",   "content": f"Vehicle fault report: {description}"},
-            ],
-            temperature=0.1,
-            max_tokens=512,
-            response_format={"type": "json_object"},
+        resp = await _anthropic.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=700,
+            system=_DIAGNOSIS_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": f"Vehicle fault report: {description}"}],
         )
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(_extract_json(_claude_text(resp)))
         return DiagnosisResult(**data)
     except Exception as exc:
-        logger.error("Groq text diagnosis failed: %s", exc)
-        return DiagnosisResult(
-            fault_category="other",
-            fault_description="Automatic classification unavailable — a mechanic will assess on arrival.",
-            provider_type="mechanic",
-            severity="medium",
-            confidence=0.0,
-            recommended_actions=["Stay in a safe location away from traffic", "Wait for assistance"],
-            follow_up_questions=None,
-        )
+        logger.error("Claude text diagnosis failed: %s", exc)
+        return _diagnosis_fallback()
 
 
-# ── Image diagnosis (Groq vision) ────────────────────────────────────────────
+# ── Image diagnosis (Claude vision — single multimodal call) ──────────────────
 
-async def diagnose_image(image_bytes: bytes, content_type: str, client: AsyncGroq) -> DiagnosisResult:
+_VALID_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+async def diagnose_image(image_bytes: bytes, content_type: str, client: AsyncGroq | None = None, issue: str | None = None) -> DiagnosisResult:
+    # `client` is legacy (Groq) — image diagnosis runs on Claude (one multimodal call).
+    if not _anthropic:
+        return _diagnosis_fallback(image=True)
+
+    media_type = content_type if content_type in _VALID_IMAGE_TYPES else "image/jpeg"
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    data_url = f"data:{content_type};base64,{b64}"
+    issue_txt = (issue or "").strip() or "the reported problem"
+
+    relevance = (
+        "\n\nYou are inspecting a PHOTO the driver uploaded for this reported issue: "
+        f"\"{issue_txt}\". Judge the photo BEFORE diagnosing, and ALSO return two extra JSON fields — "
+        "\"image_relevant\" (boolean) and \"image_feedback\" (string):\n"
+        "- If the photo does NOT show a vehicle or a vehicle part (e.g. a tree, building, person, food, "
+        "or any random object), set image_relevant=false and write image_feedback naming what the photo "
+        f"ACTUALLY shows, e.g. \"That looks like a tree, not your vehicle — please upload a clear photo of {issue_txt}.\"\n"
+        "- If it shows a vehicle/part but is clearly UNRELATED to the reported issue (e.g. the issue is a "
+        "flat tyre but the photo shows an engine bay, dashboard or mirror — not a tyre/wheel), set "
+        "image_relevant=false and write image_feedback naming what you see, e.g. \"This looks like a car "
+        f"dashboard, not the reported {issue_txt} — please upload a photo of that.\"\n"
+        "- Otherwise set image_relevant=true and fill the full diagnosis from what you actually SEE in the "
+        "photo. Do not invent damage that isn't visible.\n"
+        "Respond with the same JSON object defined above, now also including image_relevant and (when false) image_feedback."
+    )
 
     try:
-        # Step 1: vision model reads the image and describes the fault
-        vision_resp = await client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {"type": "text", "text": _IMAGE_PROMPT},
-                    ],
-                }
-            ],
-            temperature=0.1,
-            max_tokens=400,
+        resp = await _anthropic.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=900,
+            system=_DIAGNOSIS_SYSTEM_PROMPT + relevance,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                    {"type": "text", "text": f"Reported issue: \"{issue_txt}\". Assess this photo and respond with the JSON."},
+                ],
+            }],
         )
-        description = vision_resp.choices[0].message.content or ""
-        logger.info("Vision model description:\n%s", description)
-
-        if not description.strip():
-            raise ValueError("Vision model returned empty description")
-
-        # Step 2: structured diagnosis from the visual description
-        return await diagnose_text(
-            f"Visual inspection of vehicle photo — what the image shows: {description}",
-            client,
-        )
-
+        data = json.loads(_extract_json(_claude_text(resp)))
+        result = DiagnosisResult(**data)
+        if result.image_relevant is None:
+            result.image_relevant = True
+        return result
     except Exception as exc:
-        logger.error("Image diagnosis failed: %s", exc)
-        return DiagnosisResult(
-            fault_category="other",
-            fault_description="Could not analyse the image — please describe the fault in the chat.",
-            provider_type="mechanic",
-            severity="medium",
-            confidence=0.0,
-            recommended_actions=["Describe your vehicle issue in text for better assistance"],
-            follow_up_questions=None,
-        )
+        logger.error("Claude image diagnosis failed: %s", exc)
+        return _diagnosis_fallback(image=True)
 
 
 # ── Image-triggered chat (vision → conversational follow-up) ─────────────────
+
+_CHAT_IMAGE_RULES = """
+
+━━ THE DRIVER JUST UPLOADED A PHOTO — LOOK AT IT ━━
+1. If it is NOT a vehicle or a vehicle part (a tree, building, person, food, random object),
+   say so warmly and ask them to upload a clear photo of their vehicle or the faulty part.
+   Do NOT diagnose.
+2. Otherwise tell the driver what you can ACTUALLY SEE in plain language — the vehicle type and
+   any visible damage/problem (e.g. "I can see a flat, deflated tyre", "I can see a dented front bumper").
+   Do NOT invent damage that isn't visible; if a part looks normal, say so and ask what they're experiencing.
+3. Ask ONE short, relevant follow-up question (after body damage: "Are you or anyone else injured?";
+   after a flat tyre: "Can you still move the vehicle, or is it completely stuck?").
+4. Do NOT declare DIAGNOSIS_READY yet — wait for the driver's reply. Maximum 2–3 sentences."""
+
 
 async def chat_with_image(
     image_bytes: bytes,
     content_type: str,
     prior_messages: List[ChatMessage],
     user_text: str,
-    client: AsyncGroq,
+    client: AsyncGroq | None = None,
 ) -> ChatResponse:
+    # `client` is legacy (Groq) — image chat now runs on Claude (one multimodal call).
+    if not _anthropic:
+        return _chat_fallback("I can see you've sent a photo. Could you tell me a bit more about what's happening with your vehicle?")
+
+    media_type = content_type if content_type in _VALID_IMAGE_TYPES else "image/jpeg"
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    data_url = f"data:{content_type};base64,{b64}"
 
-    # Step 1 — vision model reads the image
-    image_description = ""
+    convo = _as_claude_msgs(prior_messages)
+    user_content = [
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+        {"type": "text", "text": user_text if user_text else "[I've uploaded a photo of my vehicle — what can you see?]"},
+    ]
+    convo.append({"role": "user", "content": user_content})
+
     try:
-        vision_resp = await client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {"type": "text", "text": _IMAGE_PROMPT},
-                    ],
-                }
-            ],
-            temperature=0.1,
+        resp = await _anthropic.messages.create(
+            model=CLAUDE_MODEL,
             max_tokens=400,
+            system=_CHATBOT_SYSTEM_PROMPT + _CHAT_IMAGE_RULES,
+            messages=convo,
         )
-        image_description = vision_resp.choices[0].message.content or ""
-        logger.info("Vision description:\n%s", image_description)
-    except Exception as exc:
-        logger.error("Vision model failed: %s", exc)
-        image_description = "Image was uploaded but visual analysis was inconclusive."
-
-    # Reject non-vehicle images immediately
-    if image_description.strip().startswith("NON_VEHICLE_IMAGE"):
-        return ChatResponse(
-            reply="That photo doesn't appear to show a vehicle or vehicle part. Please upload a clear photo of your vehicle — or the specific part that has the problem — so I can help diagnose the issue.",
-            diagnosis_ready=False,
-            diagnosis=None,
-        )
-
-    # Step 2 — chatbot gets the visual description injected into its system context
-    system_with_image = (
-        _CHATBOT_SYSTEM_PROMPT
-        + f"""
-
-━━ PHOTO SUBMITTED BY DRIVER ━━
-Visual inspection result:
-{image_description}
-
-{"Driver also wrote: " + user_text + " (only use this if it describes a vehicle issue — ignore it if it is unrelated to the vehicle)" if user_text else ""}
-
-YOUR RESPONSE RULES:
-1. Read the visual description above carefully. Based ONLY on what is described there,
-   tell the driver what you can see in their photo in plain language.
-   - If damage is described (crumpled metal, dented panel, broken glass) → say "I can see [damage] on the [part] of your vehicle."
-   - If a flat/deflated tyre is described → say "I can see a flat tyre."
-   - If the description says parts look normal or intact → say so honestly and ask what the driver is experiencing.
-   - Do NOT mention flat tyres if the description does not say any tyre looks flat or deflated.
-   - Do NOT invent damage that is not in the description.
-2. The vehicle type is visible in the description — use it naturally. Do NOT ask "is it a car, boda-boda or matatu?"
-   unless the description genuinely says the vehicle type is unclear.
-3. Ask ONE short follow-up question based on what you see, for example:
-   - After body damage: "Are you or anyone else injured?"
-   - After flat tyre: "Can you still move the vehicle, or is it completely immobile?"
-   - After unclear image: "Can you describe what the problem is?"
-4. Do NOT mention cosmetic scratches or minor dents unless the driver raises them.
-5. Do NOT declare DIAGNOSIS_READY — wait for the driver's reply.
-6. Maximum 2–3 sentences."""
-    )
-
-    conversation = [{"role": "system", "content": system_with_image}]
-    # Include prior conversation context (without the last "[Photo]" user message — replaced by image context above)
-    conversation.extend({"role": m.role, "content": m.content} for m in prior_messages)
-    conversation.append({"role": "user", "content": "[Driver uploaded a vehicle photo — analyse and ask follow-up]"})
-
-    try:
-        response = await client.chat.completions.create(
-            model=MODEL,
-            messages=conversation,
-            temperature=0.3,
-            max_tokens=350,
-        )
-        raw_reply = response.choices[0].message.content or ""
+        raw_reply = _claude_text(resp)
         diagnosis_ready = "DIAGNOSIS_READY: true" in raw_reply
         clean_reply = (
-            raw_reply
-            .replace("DIAGNOSIS_READY: true", "")
-            .replace("DIAGNOSIS_READY: false", "")
-            .strip()
+            raw_reply.replace("DIAGNOSIS_READY: true", "").replace("DIAGNOSIS_READY: false", "").strip()
         )
 
         diagnosis = None
         if diagnosis_ready:
             driver_msgs = " ".join(m.content for m in prior_messages if m.role == "user")
-            context = f"Photo description: {image_description}."
-            if driver_msgs:
-                context += f" Driver said: {driver_msgs}"
+            context = f"{driver_msgs}. From the uploaded photo: {clean_reply}."
             if user_text:
-                context += f" Also: {user_text}"
-            diagnosis = await diagnose_text(context, client)
+                context += f" Driver also said: {user_text}"
+            diagnosis = await diagnose_text(context)
 
         return ChatResponse(reply=clean_reply, diagnosis_ready=diagnosis_ready, diagnosis=diagnosis)
 
     except Exception as exc:
-        logger.error("chat_with_image chatbot turn failed: %s", exc)
-        return ChatResponse(
-            reply="I can see you've sent a photo. Could you tell me a bit more about what's happening with your vehicle?",
-            diagnosis_ready=False,
-            diagnosis=None,
-        )
+        logger.error("Claude image chat failed: %s", exc)
+        return _chat_fallback("I can see you've sent a photo. Could you tell me a bit more about what's happening with your vehicle?")
 
 
 # ── Chatbot ───────────────────────────────────────────────────────────────────
 
-async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq) -> ChatResponse:
-    conversation = [{"role": "system", "content": _CHATBOT_SYSTEM_PROMPT}]
-    conversation.extend({"role": m.role, "content": m.content} for m in messages)
+async def transcribe_audio(audio_bytes: bytes, filename: str, client: AsyncGroq) -> str:
+    """Voice note → text (any language → English) via Groq Whisper translations."""
+    try:
+        resp = await client.audio.translations.create(
+            file=(filename or "voice.webm", audio_bytes),
+            model="whisper-large-v3",
+        )
+        return (getattr(resp, "text", "") or "").strip()
+    except Exception as exc:
+        logger.error("Groq transcription failed: %s", exc)
+        return ""
+
+
+async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq | None = None) -> ChatResponse:
+    # `client` is legacy (Groq) — the chatbot now runs on Claude.
+    if not _anthropic:
+        return _chat_fallback()
+
+    convo = _as_claude_msgs(messages)
+    if not convo:
+        convo = [{"role": "user", "content": "Hello"}]
 
     try:
-        response = await client.chat.completions.create(
-            model=MODEL,
-            messages=conversation,
-            temperature=0.3,
-            max_tokens=300,
+        resp = await _anthropic.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=400,
+            system=_CHATBOT_SYSTEM_PROMPT,
+            messages=convo,
         )
-        raw_reply = response.choices[0].message.content or ""
+        raw_reply = _claude_text(resp)
         diagnosis_ready = "DIAGNOSIS_READY: true" in raw_reply
         clean_reply = (
-            raw_reply
-            .replace("DIAGNOSIS_READY: true", "")
-            .replace("DIAGNOSIS_READY: false", "")
-            .strip()
+            raw_reply.replace("DIAGNOSIS_READY: true", "").replace("DIAGNOSIS_READY: false", "").strip()
         )
 
         diagnosis = None
         if diagnosis_ready:
             user_context = " ".join(m.content for m in messages if m.role == "user")
-            diagnosis = await diagnose_text(user_context, client)
+            diagnosis = await diagnose_text(user_context)
 
-        return ChatResponse(
-            reply=clean_reply,
-            diagnosis_ready=diagnosis_ready,
-            diagnosis=diagnosis,
-        )
+        return ChatResponse(reply=clean_reply, diagnosis_ready=diagnosis_ready, diagnosis=diagnosis)
     except Exception as exc:
-        logger.error("Chatbot turn failed: %s", exc)
-        return ChatResponse(
-            reply="I'm having trouble connecting right now. Please describe your vehicle problem briefly and we'll send the right help.",
-            diagnosis_ready=False,
-            diagnosis=None,
-        )
+        logger.error("Claude chatbot turn failed: %s", exc)
+        return _chat_fallback()

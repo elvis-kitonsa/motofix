@@ -17,7 +17,54 @@ class ClaimCreate(BaseModel):
     description: str
     injuries: Optional[bool] = None
     third_party: Optional[bool] = None
+    insurer_id: Optional[str] = None
+    insurer_name: Optional[str] = None
     photos: list[ClaimPhoto] = []
+
+
+# ── Insurance applications (apply for cover) ────────────────────────────────────
+
+class ApplicationCreate(BaseModel):
+    insurer_id: str
+    insurer_name: str
+    cover_type: str = Field(..., description="third_party | third_party_fire_theft | comprehensive")
+    cover_label: str
+    vehicle_reg: str
+    vehicle_make: Optional[str] = ""
+    vehicle_model: Optional[str] = ""
+    vehicle_year: Optional[str] = ""
+    period: str = Field("1 year", description="Cover period, e.g. '1 year', '6 months'")
+    notes: Optional[str] = ""
+
+
+class ApplicationResponse(BaseModel):
+    id: int
+    reference: str
+    user_id: int
+    insurer_id: str
+    insurer_name: str
+    cover_type: str
+    cover_label: str
+    vehicle_reg: str
+    vehicle_make: Optional[str] = ""
+    vehicle_model: Optional[str] = ""
+    vehicle_year: Optional[str] = ""
+    period: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_record(cls, row: dict) -> "ApplicationResponse":
+        return cls(
+            id=row["id"], reference=row["reference"], user_id=row["user_id"],
+            insurer_id=row["insurer_id"], insurer_name=row["insurer_name"],
+            cover_type=row["cover_type"], cover_label=row["cover_label"],
+            vehicle_reg=row["vehicle_reg"], vehicle_make=row.get("vehicle_make") or "",
+            vehicle_model=row.get("vehicle_model") or "", vehicle_year=row.get("vehicle_year") or "",
+            period=row["period"], status=row["status"],
+            created_at=row["created_at"], updated_at=row["updated_at"],
+        )
 
 
 class ClaimPhotoOut(BaseModel):
@@ -39,6 +86,8 @@ class ClaimResponse(BaseModel):
     description: str
     injuries: Optional[bool]
     third_party: Optional[bool]
+    insurer_id: Optional[str] = None
+    insurer_name: Optional[str] = None
     status: str
     created_at: datetime
     updated_at: datetime
@@ -58,6 +107,8 @@ class ClaimResponse(BaseModel):
             description=row["description"],
             injuries=row["injuries"],
             third_party=row["third_party"],
+            insurer_id=row.get("insurer_id"),
+            insurer_name=row.get("insurer_name"),
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],

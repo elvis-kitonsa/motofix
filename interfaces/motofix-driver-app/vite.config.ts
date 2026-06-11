@@ -49,6 +49,7 @@ export default defineConfig(({ mode }) => ({
       '/chat':         { target: 'http://localhost:8007', changeOrigin: true },
       '/diagnose':     { target: 'http://localhost:8007', changeOrigin: true },
       '/parts-price':  { target: 'http://localhost:8007', changeOrigin: true },
+      '/parts-dealers':{ target: 'http://localhost:8007', changeOrigin: true },
       '/fuel-advisor': { target: 'http://localhost:8007', changeOrigin: true },
       '/claims':       { target: 'http://localhost:8006', changeOrigin: true },
     },

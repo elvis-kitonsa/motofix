@@ -62,6 +62,7 @@ export function normalizeRequest(raw: Record<string, unknown>): ServiceRequest {
     driver_name: String(raw.customer_name ?? ''),
     service_type: String(raw.service_type ?? ''),
     description: String(raw.description ?? ''),
+    media_files: Array.isArray(raw.media_files) ? (raw.media_files as ServiceRequest['media_files']) : [],
     status: status as ServiceRequest['status'],
     location_address: locationStr,
     location_lat,

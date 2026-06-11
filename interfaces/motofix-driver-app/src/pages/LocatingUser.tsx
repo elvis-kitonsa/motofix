@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Navigation } from 'lucide-react';
 
-const SOS  = '#ff2d2d';
-const SOSD = '#cc1515';
+const SOS  = '#F59E0B';
+const SOSD = '#D97706';
 
 const GPS_FALLBACK = { lat: 0.3476, lng: 32.5825 };
 
@@ -83,7 +83,7 @@ function LocatingSpinner() {
 /* ── Main page ───────────────────────────────────────────────────────────── */
 export default function LocatingUser() {
   const navigate   = useNavigate();
-  const routeState = useLocation().state as { issueType?: string; serviceType?: string; aiSummary?: string; aiDiagnosis?: unknown; mode?: string } | null;
+  const routeState = useLocation().state as { issueType?: string; serviceType?: string; aiSummary?: string; aiDiagnosis?: unknown; mode?: string; breakdownPrefs?: { fixOnSpot: boolean; allowTow: boolean } } | null;
   const issueType  = routeState?.issueType;
   const isSpareParts = routeState?.mode === 'spare-parts';
   const submitDone = useRef(false);
@@ -217,6 +217,7 @@ export default function LocatingUser() {
         state: {
           issueType,
           serviceType: routeState?.serviceType,
+          breakdownPrefs: routeState?.breakdownPrefs,
           aiSummary:   routeState?.aiSummary,
           aiDiagnosis: routeState?.aiDiagnosis,
           lat:      pendingCoords.current.lat,

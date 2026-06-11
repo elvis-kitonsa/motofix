@@ -58,6 +58,7 @@ export interface ServiceRequest {
   issue_type?: string
   service_type?: string
   description?: string
+  media_files?: { url: string; file_type: string; size_kb?: number; uploaded_at?: string }[]
   status: JobStatus
   location?: string
   location_address?: string

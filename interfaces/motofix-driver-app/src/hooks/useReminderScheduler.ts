@@ -9,8 +9,45 @@ import {
   startOfDay,
   startOfWeekMonday,
   type Cadence,
+  type ChecklistItem,
+  type ChecklistSection,
 } from '@/lib/reminders'
 import { addNotification } from '@/lib/notifications'
+import { fireReminderPrompt } from '@/components/ReminderPrompt'
+
+// How often (while the app is open) to pop ONE rotating reminder question.
+const PROMPT_INTERVAL_MS = 10 * 60_000 // 10 min — tune here
+const PROMPT_KEY = 'motofix_reminder_prompted' // { [itemId]: ISO last-prompted }
+
+function readPrompted(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(PROMPT_KEY) ?? '{}') as Record<string, string> }
+  catch { return {} }
+}
+function writePrompted(m: Record<string, string>) {
+  try { localStorage.setItem(PROMPT_KEY, JSON.stringify(m)) } catch { /* ignore */ }
+}
+
+/** Pop the single least-recently-prompted due item as an interactive question. */
+function maybePromptOne(mutedSections: string[], now: Date): void {
+  const checks = loadChecked()
+  const prompted = readPrompted()
+  const due: { item: ChecklistItem; section: ChecklistSection; last: number }[] = []
+  for (const section of SECTIONS) {
+    if (section.cadence === 'reference') continue // Do's/Don'ts aren't "due"
+    if (mutedSections.includes(section.key)) continue
+    for (const item of section.items) {
+      if (!isItemSatisfied(section.cadence, checks, item.id, now)) {
+        due.push({ item, section, last: prompted[item.id] ? Date.parse(prompted[item.id]) : 0 })
+      }
+    }
+  }
+  if (due.length === 0) return
+  due.sort((a, b) => a.last - b.last) // never-prompted / oldest first → rotate through them
+  const pick = due[0]
+  fireReminderPrompt(pick.item, pick.section)
+  prompted[pick.item.id] = now.toISOString()
+  writePrompted(prompted)
+}
 
 // Foreground reminder scheduler.
 //
@@ -23,6 +60,7 @@ import { addNotification } from '@/lib/notifications'
 interface FiredState {
   daily?: string  // 'YYYY-M-D'
   weekly?: string // ISO date of the week's Monday
+  prompt?: string // ISO timestamp of the last rotating reminder question
 }
 
 function readFired(): FiredState {
@@ -115,6 +153,16 @@ function tick() {
       )
     }
     fired.weekly = weekKey(now)
+    changed = true
+  }
+
+  // Rotating interactive reminder questions — one at a time, ~every PROMPT_INTERVAL while open.
+  if (!fired.prompt) {
+    fired.prompt = now.toISOString() // start the clock; don't fire on the very first open
+    changed = true
+  } else if (now.getTime() - Date.parse(fired.prompt) >= PROMPT_INTERVAL_MS) {
+    maybePromptOne(s.mutedSections, now)
+    fired.prompt = now.toISOString() // reset the clock whether or not anything was due
     changed = true
   }
 

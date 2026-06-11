@@ -20,6 +20,52 @@ WEIGHT_PERFORMANCE = 0.15
 # Hard cutoff — mechanics beyond this distance are not considered
 MAX_DISTANCE_KM = 50.0
 
+# ── Capability matching ────────────────────────────────────────────────────────
+# A request needs a specific capability; breakdown needs BOTH (the provider can
+# either fix it on-site OR tow it if it can't be fixed).
+_TOW_TERMS = {"tow", "towing", "recovery", "flatbed", "winch", "haul", "wrecker"}
+_MECH_TERMS = {
+    "mechanic", "mechanical", "repair", "engine", "electrical", "tyre", "tire",
+    "battery", "brake", "suspension", "service", "diagnos", "fuel", "transmission",
+}
+
+
+def _capabilities(mechanic: Dict[str, Any]) -> tuple[bool, bool]:
+    """Return (can_mechanic, can_tow) from provider_type, with a specialisations fallback."""
+    pt = str(mechanic.get("provider_type") or "").strip().lower()
+    specs = " ".join(mechanic.get("specialisations") or []).lower() + " " + str(mechanic.get("specialty") or "").lower()
+    spec_tow = any(t in specs for t in _TOW_TERMS)
+    spec_mech = any(t in specs for t in _MECH_TERMS)
+    if pt == "both":
+        return True, True
+    if pt in ("towing_provider", "towing", "tow"):
+        return spec_mech, True
+    if pt == "mechanic":
+        return True, spec_tow
+    # Unknown provider_type → infer purely from what they list (generalist = mechanic)
+    return (spec_mech or not spec_tow), spec_tow
+
+
+def _capability_tier(mechanic: Dict[str, Any], service_type: str) -> int:
+    """How well this provider fits the request: 2 = ideal, 1 = eligible, 0 = not.
+
+    Breakdown Rescue ("car won't move"): the provider must be able to TOW it (so an
+    unfixable car can still be moved); a 'both' provider is IDEAL because they can
+    also try to fix it on-site first. Mechanic-only is ineligible — they can't move
+    a dead car. Mechanic & Repair just needs mechanical capability.
+    """
+    st = (service_type or "").lower()
+    can_mech, can_tow = _capabilities(mechanic)
+    if "breakdown" in st:
+        if can_mech and can_tow:
+            return 2          # fix-or-tow → ideal
+        if can_tow:
+            return 1          # tow-only → can still move the car
+        return 0              # mechanic-only can't move an immovable car
+    if "towing_provider" in st or any(t in st for t in ("tow", "recovery", "winch", "flatbed")):
+        return 1 if can_tow else 0
+    return 1 if can_mech else 0
+
 # ── Individual scorers ────────────────────────────────────────────────────────
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -157,6 +203,7 @@ def score_mechanic(
         "phone": mechanic.get("phone"),
         "fcm_token": mechanic.get("fcm_token"),
         "distance_km": round(distance_km, 2),
+        "capability_tier": _capability_tier(mechanic, service_type),
         "total_score": round(total, 2),
         "score_breakdown": {
             "proximity": round(prox, 2),
@@ -181,11 +228,20 @@ def rank_mechanics(
     excluded_ids: Optional[List[int]] = None,
     top_n: int = 5,
 ) -> List[Dict[str, Any]]:
-    """Score all mechanics, filter ineligible ones, return the top N by score."""
+    """Score all mechanics, prefer those with the required capability, return top N.
+
+    Capability is a *preferred* hard gate: providers who can actually do the job
+    (e.g. only 'both' providers for a breakdown) are returned first. If none are
+    capable we fall back to the rest by score, so a request is never left with no
+    candidates purely on capability.
+    """
     scored = []
     for m in mechanics:
         result = score_mechanic(m, request_lat, request_lon, service_type, excluded_ids)
         if result is not None:
             scored.append(result)
-    scored.sort(key=lambda x: x["total_score"], reverse=True)
-    return scored[:top_n]
+    eligible = [s for s in scored if s.get("capability_tier", 0) >= 1]
+    pool = eligible if eligible else scored
+    # Sort by capability tier first (ideal 'both' over tow-only for breakdown), then score.
+    pool.sort(key=lambda x: (x.get("capability_tier", 0), x["total_score"]), reverse=True)
+    return pool[:top_n]

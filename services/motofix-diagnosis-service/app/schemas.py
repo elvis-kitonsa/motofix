@@ -26,6 +26,12 @@ class DiagnosisResult(BaseModel):
         None, description="Parts the driver likely needs to buy to fix this themselves, with UGX price ranges")
     service_fee_min: Optional[int] = Field(None, description="Typical fitting/labour fee — low end (UGX)")
     service_fee_max: Optional[int] = Field(None, description="Typical fitting/labour fee — high end (UGX)")
+    # Repair-vs-replace: cost if the fault can be FIXED without buying a new part (labour only). 0 if not repairable.
+    repair_fee_min: Optional[int] = Field(None, description="Minor on-site fix (no new part) — low end (UGX)")
+    repair_fee_max: Optional[int] = Field(None, description="Minor on-site fix (no new part) — high end (UGX)")
+    # Image relevance (for /diagnose/image): False if the photo isn't a vehicle or doesn't match the issue.
+    image_relevant: Optional[bool] = Field(None, description="Whether an uploaded photo is relevant to the issue")
+    image_feedback: Optional[str] = Field(None, description="Message to the driver when the photo is not usable")
 
 
 class ChatMessage(BaseModel):
@@ -70,8 +76,12 @@ class PartPriceRequest(BaseModel):
 
 class PartPrice(BaseModel):
     name: str
-    price_min: int
-    price_max: int
+    price_min: int = 0          # overall range (min used/new) — kept for order history
+    price_max: int = 0
+    new_min: int = 0
+    new_max: int = 0
+    used_min: int = 0
+    used_max: int = 0
     note: Optional[str] = None
 
 

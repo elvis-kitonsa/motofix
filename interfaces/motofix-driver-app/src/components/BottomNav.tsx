@@ -12,7 +12,7 @@ const ITEMS = [
     path: '/sos',
     icon: PlusCircle,
     label: 'Request',
-    matchPaths: ['/sos', '/fault-chat', '/locating', '/nearby-mechanics', '/create-request'],
+    matchPaths: ['/sos', '/fault-chat', '/locating', '/nearby-mechanics', '/describe-issue'],
   },
   {
     path: '/history',
