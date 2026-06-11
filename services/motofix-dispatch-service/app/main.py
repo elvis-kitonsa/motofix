@@ -1222,7 +1222,11 @@ async def get_pending_requests(current_user: Dict = Depends(get_current_user), d
             for k in ("dispatched_at", "accepted_at", "en_route_at", "arrived_at", "service_started_at", "completed_at"):
                 if data.get(k):
                     data[k] = data[k].isoformat()
-            data["media_files"] = []
+            media_rows = await db.fetch(
+                "SELECT file_url as url, file_type, size_kb, uploaded_at FROM media_files WHERE request_id = $1 ORDER BY uploaded_at DESC",
+                row["id"],
+            )
+            data["media_files"] = [dict(m) for m in media_rows] if media_rows else []
             results.append(data)
         return results
     except Exception as e:
