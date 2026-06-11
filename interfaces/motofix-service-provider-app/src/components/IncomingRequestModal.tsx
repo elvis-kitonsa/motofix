@@ -210,6 +210,20 @@ export default function IncomingRequestModal({ request, onAccept, onDecline }: P
             </div>
           )}
 
+          {/* Driver's photo of the problem */}
+          {(request.media_files ?? []).some(m => m.file_type === 'photo' || m.file_type === 'image') && (
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 3 }}>Photo from the driver</p>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+                {(request.media_files ?? []).filter(m => m.file_type === 'photo' || m.file_type === 'image').map((m, i) => (
+                  <a key={i} href={m.url} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                    <img src={m.url} alt="Reported damage" style={{ height: 96, borderRadius: 10, border: `1px solid ${C.border}`, objectFit: 'cover', display: 'block' }} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Location */}
           <div>
             <p style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 3 }}>

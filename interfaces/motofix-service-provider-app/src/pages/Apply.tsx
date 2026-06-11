@@ -132,7 +132,8 @@ export default function Apply() {
         : raw.startsWith('0') ? '+256' + raw.slice(1)
         : raw.length > 0 ? '+256' + raw : form.phone
 
-      const providerType = form.serviceType === 'towing' ? 'towing_provider' : 'mechanic'
+      // Keep "both" distinct — these providers are the ones eligible for Breakdown Rescue jobs.
+      const providerType = form.serviceType === 'towing' ? 'towing_provider' : form.serviceType === 'both' ? 'both' : 'mechanic'
 
       const fd = new FormData()
       fd.append('full_name', form.fullName.trim())
