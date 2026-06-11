@@ -1,7 +1,7 @@
-import { useState, useLayoutEffect } from 'react'
+import { useState, useLayoutEffect, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, MapPin, Send, Sparkles } from 'lucide-react'
-import { requestsService } from '@/config/api'
+import { requestsService, diagnosisService, type DiagnosisResult } from '@/config/api'
 import { useAuth } from '@/hooks/useAuth'
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
@@ -17,6 +17,7 @@ const ISSUE_LABELS: Record<string, string> = {
   battery:   'Dead Battery',
   fuel:      'Out of Fuel',
   towing:    'Need Towing',
+  breakdown: 'Breakdown Rescue',
   other:     'Other Issue',
 }
 
@@ -26,6 +27,7 @@ const ISSUE_DEFAULTS: Record<string, string> = {
   battery:   'Battery problem – needs jump start or replacement',
   fuel:      'Out of fuel – needs fuel delivery',
   towing:    'Vehicle needs towing',
+  breakdown: 'Vehicle has broken down — may need on-site repair or towing',
   other:     'Needs roadside assistance',
 }
 
@@ -33,6 +35,7 @@ const ISSUE_DEFAULTS: Record<string, string> = {
 interface RouteState {
   issueType?:   string
   serviceType?: string
+  breakdownPrefs?: { fixOnSpot: boolean; allowTow: boolean }
   aiSummary?:   string
   aiDiagnosis?: { severity?: string; fault_category?: string } | null
   lat?:         number
@@ -42,9 +45,10 @@ interface RouteState {
 }
 
 /* ── Dispatch overlay phases ─────────────────────────────────────────────── */
-type DispatchPhase = 'idle' | 'searching' | 'found' | 'dispatched'
+type DispatchPhase = 'idle' | 'finding_garage' | 'searching' | 'found' | 'dispatched'
 
 const DISPATCH_MSGS: Record<Exclude<DispatchPhase, 'idle'>, { title: string; sub: string }> = {
+  finding_garage: { title: 'Finding the Garage', sub: 'Locating the garage you specified…' },
   searching:  { title: 'Searching Nearby',   sub: 'Finding available service providers in your area…' },
   found:      { title: 'Providers Found!',   sub: 'Alerting mechanics near your location…' },
   dispatched: { title: 'Request Dispatched!', sub: 'A provider will confirm shortly. Stand by.' },
@@ -220,6 +224,9 @@ export default function DescribeIssue() {
   const { user }    = useAuth()
 
   const issueType  = routeState?.issueType
+  const breakdownPrefs = routeState?.breakdownPrefs
+  const showTowDest = issueType === 'breakdown' && (breakdownPrefs?.allowTow ?? true)
+
   const aiSummary  = routeState?.aiSummary
   const lat        = routeState?.lat
   const lng        = routeState?.lng
@@ -229,7 +236,65 @@ export default function DescribeIssue() {
   const [description,    setDescription]    = useState('')
   const [dispatchPhase,  setDispatchPhase]  = useState<DispatchPhase>('idle')
   const [submitError,    setSubmitError]    = useState('')
+  const [towChoice,      setTowChoice]      = useState<'find' | 'own'>('find')
+  const [garageName,     setGarageName]     = useState('')
+  const [garageArea,     setGarageArea]     = useState('')
+  const [garagePhone,    setGaragePhone]    = useState('')
+  const [estimate,        setEstimate]        = useState<DiagnosisResult | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(true)
+  const [photoChecked,    setPhotoChecked]    = useState(false)
+  const [photoChecking,   setPhotoChecking]   = useState(false)
+  const [photoFile,       setPhotoFile]       = useState<File | null>(null)
+  const [photoError,      setPhotoError]      = useState('')
   const [displayAddress, setDisplayAddress] = useState<string | null>(null)
+
+  const fmtUGX = (n: number) => 'UGX ' + Math.round(n).toLocaleString()
+  const rng = (a: number, b: number) => (a === b ? fmtUGX(a) : `${fmtUGX(a)} – ${fmtUGX(b)}`)
+
+  // Transparent MOTOBOT cost estimate — fetched once when the screen opens.
+  useEffect(() => {
+    let cancelled = false
+    const seed = (aiSummary && aiSummary.trim())
+      || `${ISSUE_LABELS[issueType ?? ''] ?? 'Vehicle issue'} — ${ISSUE_DEFAULTS[issueType ?? ''] ?? 'needs roadside assistance'}`
+    setEstimateLoading(true)
+    diagnosisService.diagnoseText(seed)
+      .then(r => { if (!cancelled) setEstimate(r.data) })
+      .catch(() => { if (!cancelled) setEstimate(null) })
+      .finally(() => { if (!cancelled) setEstimateLoading(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Driver photographs the damage → MOTOBOT re-checks repairable-vs-replace from the image.
+  const handlePhoto = async (file: File) => {
+    setPhotoError('')
+    setPhotoChecking(true)
+    try {
+      const issueLabel = ISSUE_LABELS[issueType ?? ''] || (aiSummary?.trim()) || 'the reported problem'
+      const r = await diagnosisService.diagnoseImage(file, issueLabel)
+      if (r.data.image_relevant === false) {
+        // Photo isn't the vehicle / doesn't match the issue — ask for the right one.
+        setPhotoError(r.data.image_feedback || 'That photo doesn’t match the issue. Please upload a clear photo of the actual problem.')
+      } else {
+        setEstimate(r.data)
+        setPhotoChecked(true)
+        setPhotoFile(file)
+      }
+    } catch {
+      setPhotoError('Couldn’t check that photo — please try another one.')
+    } finally {
+      setPhotoChecking(false)
+    }
+  }
+  const photoVerdict = (() => {
+    if (!photoChecked || !estimate) return null
+    const rMax = estimate.repair_fee_max ?? 0
+    const hasParts = (estimate.required_parts ?? []).length > 0
+    const severe = ['high', 'critical'].includes((estimate.severity || '').toLowerCase())
+    if (rMax > 0 && !severe) return { tone: 'good' as const, text: 'Looks repairable — you likely do NOT need to buy a new part.' }
+    if (hasParts && (rMax === 0 || severe)) return { tone: 'warn' as const, text: 'The damage looks serious — a new part is likely genuinely needed.' }
+    return { tone: 'mixed' as const, text: 'Could go either way — ask the mechanic to physically show you the damage.' }
+  })()
 
   useLayoutEffect(() => {
     document.body.style.background = 'var(--page-bg)'
@@ -243,9 +308,38 @@ export default function DescribeIssue() {
     reverseGeocode(lat, lng).then(setDisplayAddress)
   }, [lat, lng])
 
+  /* Forward-geocode a garage name + area → coords (so it's viewable on the map). */
+  const geocodeArea = async (q: string): Promise<{ lat: number; lng: number } | null> => {
+    const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    if (!key || !q.trim()) return null
+    try {
+      const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q + ', Uganda')}&key=${key}`)
+      const d = await r.json()
+      const loc = d.results?.[0]?.geometry?.location
+      if (loc) return { lat: loc.lat, lng: loc.lng }
+    } catch { /* fall through to simulated */ }
+    return null
+  }
+
   const handleSubmit = async (customDesc?: string) => {
     if (dispatchPhase !== 'idle') return
     setSubmitError('')
+    const specified = showTowDest && towChoice === 'own'
+    if (specified && !(garageName.trim() && garageArea.trim() && garagePhone.trim())) {
+      setSubmitError('Please enter the garage name, area, and phone number.')
+      return
+    }
+
+    // Specified garage → rescan to "find" it first (simulated — always found).
+    let garageCoords: { lat: number; lng: number } | null = null
+    if (specified) {
+      setDispatchPhase('finding_garage')
+      garageCoords =
+        (await geocodeArea(`${garageName.trim()}, ${garageArea.trim()}`)) ??
+        (lat != null && lng != null ? { lat: lat + 0.012, lng: lng + 0.012 } : null)
+      await new Promise(r => setTimeout(r, 2400))
+    }
+
     setDispatchPhase('searching')
 
     /* Staggered dispatch messages */
@@ -254,16 +348,54 @@ export default function DescribeIssue() {
 
     try {
       const notes = (customDesc ?? description).trim()
-      const finalDescription = aiSummary
-        ? aiSummary + (notes ? `\n\nAdditional notes from driver: ${notes}` : '')
-        : (notes || ISSUE_DEFAULTS[issueType ?? ''] || 'Needs roadside assistance')
-      const res = await requestsService.create({
-        customer_name: user?.full_name || 'Driver',
-        service_type:  ISSUE_LABELS[issueType ?? ''] ?? 'Other',
-        location:      lat != null && lng != null ? `${lat},${lng}` : '0,0',
-        description:   finalDescription,
-      })
-      const newId = String(res.data?.id ?? '')
+      let finalDescription: string
+      if (issueType === 'breakdown') {
+        const fix = breakdownPrefs?.fixOnSpot ?? true
+        const tow = breakdownPrefs?.allowTow ?? true
+        const headline = specified
+          ? 'Breakdown — tow the vehicle to a specified garage.'
+          : !fix
+            ? 'Breakdown — tow the vehicle to a nearby garage.'
+            : !tow
+              ? 'Breakdown — attempt on-site repair only (no towing).'
+              : 'Breakdown — fix on-site if possible, otherwise tow to a nearby garage.'
+        const parts = [headline]
+        if (specified) {
+          parts.push(`Tow to garage:\n• Name: ${garageName.trim()}\n• Area: ${garageArea.trim()}\n• Phone: ${garagePhone.trim()}${garageCoords ? `\n• Map: ${garageCoords.lat.toFixed(5)},${garageCoords.lng.toFixed(5)}` : ''}`)
+        }
+        if (notes) parts.push(`Notes: ${notes}`)
+        finalDescription = parts.join('\n\n')
+      } else {
+        finalDescription = aiSummary
+          ? aiSummary + (notes ? `\n\nAdditional notes from driver: ${notes}` : '')
+          : (notes || ISSUE_DEFAULTS[issueType ?? ''] || 'Needs roadside assistance')
+      }
+      // Attach MOTOBOT's photo verdict to the request so the mechanic sees it before quoting.
+      if (photoChecked && photoVerdict) {
+        finalDescription += `\n\nMOTOBOT photo check: ${photoVerdict.text}${estimate?.fault_description ? ` (${estimate.fault_description})` : ''}`
+      }
+      const svcType = ISSUE_LABELS[issueType ?? ''] ?? 'Other'
+      const loc = lat != null && lng != null ? `${lat},${lng}` : '0,0'
+      let newId = ''
+      if (photoFile) {
+        // Send the damage photo with the request (mechanic can view it before quoting).
+        const fd = new FormData()
+        fd.append('customer_name', user?.full_name || 'Driver')
+        fd.append('service_type', svcType)
+        fd.append('location', loc)
+        fd.append('description', finalDescription)
+        fd.append('media_files', photoFile)
+        const res = await requestsService.createWithMedia(fd)
+        newId = String(res.data?.id ?? '')
+      } else {
+        const res = await requestsService.create({
+          customer_name: user?.full_name || 'Driver',
+          service_type:  svcType,
+          location:      loc,
+          description:   finalDescription,
+        })
+        newId = String(res.data?.id ?? '')
+      }
       setTimeout(() => {
         clearTimeout(t1); clearTimeout(t2)
         navigate(newId ? `/requests/${newId}` : '/requests', { replace: true })
@@ -408,6 +540,41 @@ export default function DescribeIssue() {
               : <>Help our providers understand your situation. This is optional — you can also just tap <strong style={{ color: 'var(--text-md)' }}>I Don't Know</strong>.</>}
           </p>
 
+          {showTowDest && (
+            <div style={{ marginBottom: 18 }}>
+              <p style={{ color: 'var(--text-hi)', fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>If it needs towing, where to?</p>
+              <p style={{ color: 'var(--text-lo)', fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>Have your own mechanic? We can tow it there — even if they aren't on MOTOFIX.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { v: 'find', t: 'Find a nearby garage for me', s: 'We pick the closest trusted provider' },
+                  { v: 'own',  t: 'Tow to a specified garage',    s: 'Tell us which garage to take it to' },
+                ].map(opt => {
+                  const on = towChoice === opt.v
+                  return (
+                    <button key={opt.v} onClick={() => setTowChoice(opt.v as 'find' | 'own')} disabled={dispatchPhase !== 'idle'}
+                      style={{ textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer', border: on ? `2px solid ${AMBER}` : '1.5px solid var(--border-3)', background: on ? 'rgba(245,158,11,0.12)' : 'var(--surface-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: `2px solid ${on ? AMBER : 'var(--border-4)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <span style={{ width: 9, height: 9, borderRadius: '50%', background: AMBER }} />}</span>
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: 'block', color: 'var(--text-hi)', fontSize: 13.5, fontWeight: 700 }}>{opt.t}</span>
+                        <span style={{ display: 'block', color: 'var(--text-lo)', fontSize: 11, marginTop: 1 }}>{opt.s}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {towChoice === 'own' && (
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input value={garageName} onChange={e => setGarageName(e.target.value)} disabled={dispatchPhase !== 'idle'} placeholder="Garage name — e.g. Katende Motors"
+                    style={{ width: '100%', boxSizing: 'border-box', height: 44, borderRadius: 12, border: '1.5px solid var(--border-3)', background: 'var(--input-bg)', color: 'var(--text-hi)', padding: '0 14px', fontSize: 13.5, outline: 'none' }} />
+                  <input value={garageArea} onChange={e => setGarageArea(e.target.value)} disabled={dispatchPhase !== 'idle'} placeholder="Area / location — e.g. Ntinda, Kampala"
+                    style={{ width: '100%', boxSizing: 'border-box', height: 44, borderRadius: 12, border: '1.5px solid var(--border-3)', background: 'var(--input-bg)', color: 'var(--text-hi)', padding: '0 14px', fontSize: 13.5, outline: 'none' }} />
+                  <input value={garagePhone} onChange={e => setGaragePhone(e.target.value)} disabled={dispatchPhase !== 'idle'} inputMode="tel" placeholder="Garage phone — e.g. 0772 123456"
+                    style={{ width: '100%', boxSizing: 'border-box', height: 44, borderRadius: 12, border: '1.5px solid var(--border-3)', background: 'var(--input-bg)', color: 'var(--text-hi)', padding: '0 14px', fontSize: 13.5, outline: 'none' }} />
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ position: 'relative' }}>
             <textarea
               value={description}
@@ -432,6 +599,75 @@ export default function DescribeIssue() {
 
           {submitError && (
             <p style={{ color: SOS, fontSize: 12, marginTop: 10, fontWeight: 600 }}>{submitError}</p>
+          )}
+        </div>
+
+        {/* AI cost estimate — transparency before the driver commits */}
+        <div style={{ borderRadius: 16, border: '1px solid var(--border-2)', background: 'var(--surface-1)', padding: 16, margin: '0 0 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Sparkles style={{ width: 16, height: 16, color: AMBER }} />
+            <p style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-hi)' }}>MOTOBOT cost estimate</p>
+          </div>
+          {photoVerdict && (
+            <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 12, marginBottom: 12, background: photoVerdict.tone === 'good' ? 'rgba(34,197,94,0.12)' : photoVerdict.tone === 'warn' ? 'rgba(245,158,11,0.12)' : 'var(--surface-2)', border: `1px solid ${photoVerdict.tone === 'good' ? 'rgba(34,197,94,0.35)' : photoVerdict.tone === 'warn' ? AMBER + '50' : 'var(--border-3)'}` }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{photoVerdict.tone === 'good' ? '✅' : photoVerdict.tone === 'warn' ? '⚠️' : '🔎'}</span>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-hi)', marginBottom: 2 }}>MOTOBOT checked your photo</div>
+                <div style={{ fontSize: 12, color: 'var(--text-md)', lineHeight: 1.45 }}>{photoVerdict.text}</div>
+                {estimate?.fault_description && <div style={{ fontSize: 11, color: 'var(--text-lo)', lineHeight: 1.45, marginTop: 3 }}>{estimate.fault_description}</div>}
+              </div>
+            </div>
+          )}
+          {(estimateLoading || photoChecking) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-lo)', fontSize: 13, padding: '4px 0 8px' }}>
+              <span style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${AMBER}40`, borderTopColor: AMBER, display: 'inline-block', animation: 'di-spin 0.8s linear infinite' }} />
+              {photoChecking ? 'MOTOBOT is checking your photo…' : 'MOTOBOT is checking typical Kampala prices…'}
+            </div>
+          ) : (() => {
+            const parts = estimate?.required_parts ?? []
+            const partsMin = parts.reduce((s, p) => s + (p.price_min || 0), 0)
+            const partsMax = parts.reduce((s, p) => s + (p.price_max || 0), 0)
+            const feeMin = estimate?.service_fee_min ?? 0
+            const feeMax = estimate?.service_fee_max ?? 0
+            const repairMin = estimate?.repair_fee_min ?? 0
+            const repairMax = estimate?.repair_fee_max ?? 0
+            const replaceMin = partsMin + feeMin
+            const replaceMax = partsMax + feeMax
+            const hasRepair = repairMax > 0
+            const hasReplace = replaceMax > 0
+            if (!hasRepair && !hasReplace) return (
+              <p style={{ fontSize: 12.5, color: 'var(--text-lo)', lineHeight: 1.5 }}>This one needs an on-site check — your provider will confirm the cost with you before any work begins.</p>
+            )
+            return (
+              <>
+                {hasRepair && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.3)', marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#16A34A' }}>If it can be repaired</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-lo)', marginTop: 2 }}>Minor on-site fix — no new part</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#16A34A', whiteSpace: 'nowrap' }}>{rng(repairMin, repairMax)}</div>
+                  </div>
+                )}
+                {hasReplace && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.10)', border: `1px solid ${AMBER}40` }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: AMBRD }}>If a new part is needed</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-lo)', marginTop: 2 }}>{(parts.length ? parts.map(p => p.name).join(', ') : 'Replacement part')} + fitting</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: AMBRD, whiteSpace: 'nowrap' }}>{rng(replaceMin, replaceMax)}</div>
+                  </div>
+                )}
+                <p style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.55, marginTop: 11 }}>We can't see the exact damage from here — the mechanic inspects on arrival and confirms the price. You only pay for a new part if a repair won't hold. Rough Kampala estimates, not a binding quote.</p>
+              </>
+            )
+          })()}
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: '11px 0', borderRadius: 12, border: `1.5px dashed ${AMBER}66`, background: 'rgba(245,158,11,0.06)', color: AMBRD, fontSize: 12.5, fontWeight: 800, cursor: photoChecking ? 'wait' : 'pointer' }}>
+            📷 {photoChecking ? 'Checking your photo…' : photoChecked ? 'Add a different photo' : 'Add a photo of the problem for a sharper estimate'}
+            <input type="file" accept="image/*" disabled={photoChecking || dispatchPhase !== 'idle'} style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handlePhoto(f); e.currentTarget.value = '' }} />
+          </label>
+          {photoError && (
+            <p style={{ fontSize: 11.5, color: '#EF4444', fontWeight: 600, lineHeight: 1.5, marginTop: 8 }}>{photoError}</p>
           )}
         </div>
 

@@ -1358,8 +1358,8 @@ export default function RequestDetail() {
               <div>
                 <p className="text-xs mb-0.5" style={{ color: '#F59E0B', fontWeight: 700 }}>Requested at</p>
                 <p className="text-sm text-foreground">
-                  {new Date(request.created_at).toLocaleString('en-UG', {
-                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                  {new Date(normTs(request.created_at)).toLocaleString('en-UG', {
+                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Kampala',
                   })}
                 </p>
               </div>
