@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
+import { MotobotFab } from "@/components/MotobotFab";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { NetworkBanner } from "@/components/NetworkBanner";
 import { RequestProvider } from "@/contexts/RequestContext";
@@ -21,7 +22,6 @@ import Verifying from "./pages/Verifying";
 import Onboarding from "./pages/Onboarding";
 import Home from "./pages/Home";
 import RequestsList from "./pages/RequestsList";
-import CreateRequest from "./pages/CreateRequest";
 import Profile from "./pages/Profile";
 import RequestDetail from "./pages/RequestDetail";
 import LocatingUser from "./pages/LocatingUser";
@@ -112,14 +112,6 @@ function AppContent() {
           element={
             <PrivateRoute>
               <DescribeIssue />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/create-request"
-          element={
-            <PrivateRoute>
-              <CreateRequest />
             </PrivateRoute>
           }
         />
@@ -278,6 +270,7 @@ function AppContent() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       {showBottomNav && <BottomNav />}
+      {showBottomNav && isAuthenticated && <MotobotFab />}
     </>
   );
 }
@@ -288,6 +281,9 @@ const App = () => (
       <Toaster
         position="top-center"
         richColors
+        visibleToasts={1}
+        duration={3500}
+        closeButton
         toastOptions={{
           style: {
             background: 'var(--overlay-bg)',

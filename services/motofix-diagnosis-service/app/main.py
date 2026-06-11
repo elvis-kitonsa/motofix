@@ -15,7 +15,7 @@ load_dotenv()
 
 import httpx
 from math import radians, cos, sin, asin, sqrt
-from .diagnosis import chat_diagnose, chat_with_image, diagnose_image, diagnose_text, fuel_advisor, guided_diagnose, price_spare_parts
+from .diagnosis import chat_diagnose, chat_with_image, diagnose_image, diagnose_text, fuel_advisor, guided_diagnose, price_spare_parts, transcribe_audio
 from .schemas import (
     ChatMessage, ChatRequest, ChatResponse, DiagnosisResult, TextDiagnosisRequest,
     FuelAdvisorRequest, NearbyStationsRequest, GuidedDiagnoseRequest,
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 SECRET_KEY = os.getenv("SECRET_KEY", "change_me_in_production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 groq_client: Optional[AsyncGroq] = None
 
@@ -40,9 +41,14 @@ async def lifespan(app: FastAPI):
     global groq_client
     if GROQ_API_KEY:
         groq_client = AsyncGroq(api_key=GROQ_API_KEY)
-        logger.info("Fault diagnosis service: Groq client ready")
+        logger.info("Fault diagnosis service: Groq client ready (chat / guided / parts / fuel)")
     else:
-        logger.warning("GROQ_API_KEY not set — /diagnose and /chat will return fallback responses")
+        logger.warning("GROQ_API_KEY not set — /chat & guided triage will return fallback responses")
+
+    if ANTHROPIC_API_KEY:
+        logger.info("Fault diagnosis: Claude (Haiku 4.5) ready for text + image diagnosis")
+    else:
+        logger.warning("ANTHROPIC_API_KEY not set — /diagnose & /diagnose/image will return fallback responses")
 
     yield
     logger.info("Fault diagnosis service: shutdown")
@@ -120,6 +126,7 @@ async def health():
         "status": "ok",
         "service": "fault-diagnosis",
         "groq_configured": groq_client is not None,
+        "claude_configured": bool(ANTHROPIC_API_KEY),
     }
 
 
@@ -135,9 +142,9 @@ async def diagnose(
     type (mechanic / towing provider / spare parts dealer), severity, and
     immediate actions the driver should take.
     """
-    if not groq_client:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured on this server")
-    return await diagnose_text(body.description, groq_client)
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="Claude API key not configured on this server")
+    return await diagnose_text(body.description)
 
 
 @app.post("/diagnose/guided", tags=["diagnosis"])
@@ -164,17 +171,18 @@ async def diagnose_guided(body: GuidedDiagnoseRequest):
 @app.post("/diagnose/image", response_model=DiagnosisResult, tags=["diagnosis"])
 async def diagnose_image_endpoint(
     file: UploadFile = File(..., description="JPEG or PNG image of the vehicle fault"),
+    issue: str | None = Form(None),
     _user: dict = Depends(_require_token),
 ):
     """
-    Classify a fault from an uploaded vehicle image using Groq vision AI.
+    Classify a fault from an uploaded vehicle image using Claude (Haiku 4.5) vision.
 
-    The image is sent directly to llama-3.2-11b-vision-preview which reads and
-    describes the fault, then llama-3.3-70b-versatile produces a structured diagnosis.
-    Accepts JPEG and PNG images up to 10 MB.
+    Claude reads the photo, checks it's relevant to the reported issue, and returns a
+    structured diagnosis (incl. repair-vs-replace estimate) in one multimodal call.
+    Accepts JPEG/PNG/GIF/WebP images up to 10 MB.
     """
-    if not groq_client:
-        raise HTTPException(status_code=503, detail="Groq API key not configured on this server")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="Claude API key not configured on this server")
 
     content_type = file.content_type or "image/jpeg"
     if not content_type.startswith("image/"):
@@ -184,7 +192,7 @@ async def diagnose_image_endpoint(
     if len(image_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image too large — maximum size is 10 MB")
 
-    return await diagnose_image(image_bytes, content_type, groq_client)
+    return await diagnose_image(image_bytes, content_type, issue=issue)
 
 
 @app.post("/chat/image", response_model=ChatResponse, tags=["chatbot"])
@@ -195,12 +203,12 @@ async def chat_image(
     _user: dict = Depends(_require_token),
 ):
     """
-    Image-aware chat turn. The vision model reads the uploaded photo, then the
-    chatbot describes what it sees and asks follow-up questions. Returns a
-    ChatResponse so it slots into the same chat flow as /chat.
+    Image-aware chat turn. Claude (Haiku 4.5) reads the uploaded photo, describes
+    what it sees and asks follow-up questions. Returns a ChatResponse so it slots
+    into the same chat flow as /chat.
     """
-    if not groq_client:
-        raise HTTPException(status_code=503, detail="Groq API key not configured on this server")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="Claude API key not configured on this server")
 
     content_type = file.content_type or "image/jpeg"
     if not content_type.startswith("image/"):
@@ -215,7 +223,7 @@ async def chat_image(
     except Exception:
         prior = []
 
-    return await chat_with_image(image_bytes, content_type, prior, user_text.strip(), groq_client)
+    return await chat_with_image(image_bytes, content_type, prior, user_text.strip())
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["chatbot"])
@@ -233,9 +241,26 @@ async def chat(
 
     The client is responsible for storing conversation history between turns.
     """
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="Claude API key not configured on this server")
+    return await chat_diagnose(body.messages)
+
+
+@app.post("/transcribe", tags=["chatbot"])
+async def transcribe_endpoint(
+    file: UploadFile = File(..., description="Audio voice note (webm/ogg/mp3/m4a/wav)"),
+    _user: dict = Depends(_require_token),
+):
+    """Transcribe a driver's voice note to English text via Groq Whisper."""
     if not groq_client:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured on this server")
-    return await chat_diagnose(body.messages, groq_client)
+        raise HTTPException(status_code=503, detail="Transcription not configured on this server")
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+    if len(audio_bytes) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio too large — maximum size is 25 MB")
+    text = await transcribe_audio(audio_bytes, file.filename or "voice.webm", groq_client)
+    return {"text": text}
 
 
 # ── MOTOBOT — spare-parts pricing ──────────────────────────────────────────────
@@ -419,3 +444,120 @@ async def nearby_stations_endpoint(
 
     stations.sort(key=lambda s: s["distance_km"])
     return {"stations": stations[:12]}
+
+
+# ── MOTOBOT — nearby spare-parts dealers (real OSM + Makerere fallback) ─────────
+
+# Real spare-parts businesses in & around Makerere / central Kampala, with the
+# shop photos the user supplied. Returned for the demo region (see endpoint).
+_MAKERERE_DEALERS = [
+    {"name": "Mandela Auto Spares Ltd",          "lat": 0.3128, "lng": 32.5738, "vicinity": "Ben Kiwanuka Street, Kampala", "category": "car_parts",  "phone": "+256 414 235090", "rating": 4.9, "reviews": 10, "hours": "8:00 AM – 5:00 PM (Mon–Sat)", "photo": "mandela.jpg"},
+    {"name": "Genuine Auto Spare Parts Uganda",  "lat": 0.3452, "lng": 32.5575, "vicinity": "Kawaala Road, Kampala",        "category": "car_parts",  "phone": "+256 777 688404", "rating": 3.0, "reviews": 1,  "hours": "8:00 AM – 6:00 PM (Mon–Sat)", "photo": "genuine.jpg"},
+    {"name": "JES Autos — Europe Spare Parts",   "lat": 0.3092, "lng": 32.5648, "vicinity": "Namirembe Road, Kampala",      "category": "car_parts",  "phone": "+256 751 118156", "rating": 4.3, "reviews": 18, "hours": "8:00 AM – 7:00 PM (Mon–Sat)", "photo": "jes.jpg"},
+    {"name": "Auto Spare Parts — Kiseka Market", "lat": 0.3105, "lng": 32.5715, "vicinity": "Nakivubo Road, Kiseka Market", "category": "car_parts",  "phone": None,              "rating": 3.7, "reviews": 7,  "hours": "8:00 AM – 6:00 PM (Mon–Sat)", "photo": "kiseka.jpg"},
+    {"name": "zmk mart Auto Parts",              "lat": 0.3558, "lng": 32.5402, "vicinity": "Nabunya Road, Nansana",        "category": "car_parts",  "phone": "+256 772 502838", "rating": 4.3, "reviews": 7,  "hours": "Open 24 hours",               "photo": "zmk.jpg"},
+    {"name": "MK Auto Spare Parts",              "lat": 0.3170, "lng": 32.5820, "vicinity": "Kampala",                      "category": "car_repair", "phone": None,              "rating": 4.2, "reviews": 15, "hours": "8:00 AM – 7:00 PM (Mon–Sat)", "photo": "mk.jpg"},
+    {"name": "Shan Auto Parts Ltd",              "lat": 0.3140, "lng": 32.5760, "vicinity": "Kampala (8HW7+P4W)",           "category": "car_parts",  "phone": None,              "rating": 5.0, "reviews": 1,  "hours": "8:00 AM – 6:00 PM (Mon–Sat)", "photo": None},
+    {"name": "Simple J Auto Spare Parts",        "lat": 0.3385, "lng": 32.5765, "vicinity": "Mulago, Kampala",              "category": "car_parts",  "phone": None,              "rating": 4.1, "reviews": 12, "hours": "8:00 AM – 6:00 PM (Mon–Sat)", "photo": None},
+]
+
+_SHOP_TO_CAT = {"car_parts": "car_parts", "car_repair": "car_repair", "tyres": "tyres", "motorcycle_repair": "motorcycle_repair"}
+_CAT_DEFAULT_NAME = {
+    "car_parts": "Auto Spare Parts", "car_repair": "Car Repair Garage",
+    "tyres": "Tyre & Battery Shop", "motorcycle_repair": "Boda Mechanics",
+}
+
+
+async def _overpass_dealers(lat: float, lng: float, radius_m: int) -> list:
+    """Query OpenStreetMap for car-parts / repair / tyre shops near (lat,lng)."""
+    query = (
+        "[out:json][timeout:15];"
+        "("
+        f'node["shop"="car_parts"](around:{radius_m},{lat},{lng});'
+        f'way["shop"="car_parts"](around:{radius_m},{lat},{lng});'
+        f'node["shop"="car_repair"](around:{radius_m},{lat},{lng});'
+        f'way["shop"="car_repair"](around:{radius_m},{lat},{lng});'
+        f'node["shop"="tyres"](around:{radius_m},{lat},{lng});'
+        f'node["shop"="motorcycle_repair"](around:{radius_m},{lat},{lng});'
+        ");"
+        "out center tags;"
+    )
+    async with httpx.AsyncClient(timeout=5, headers=_OVERPASS_HEADERS) as client:
+        for url in _OVERPASS_URLS:
+            try:
+                resp = await client.post(url, data={"data": query})
+                if resp.status_code == 200:
+                    return resp.json().get("elements", [])
+            except Exception as exc:
+                logger.warning("Overpass dealers %s failed: %s", url, exc)
+    return []
+
+
+def _build_dealers(lat: float, lng: float, elements: list) -> list:
+    out, seen = [], set()
+    for el in elements:
+        tags = el.get("tags") or {}
+        if el.get("type") == "node":
+            la, lo = el.get("lat"), el.get("lon")
+        else:
+            c = el.get("center") or {}
+            la, lo = c.get("lat"), c.get("lon")
+        if la is None or lo is None:
+            continue
+        oid = f"{el.get('type')}/{el.get('id')}"
+        if oid in seen:
+            continue
+        seen.add(oid)
+        cat = _SHOP_TO_CAT.get(tags.get("shop") or "", "car_parts")
+        name = tags.get("name") or tags.get("operator") or _CAT_DEFAULT_NAME.get(cat, "Auto Spares")
+        addr = ", ".join([p for p in [tags.get("addr:street"), tags.get("addr:suburb") or tags.get("addr:city")] if p]) or "Kampala"
+        out.append({
+            "place_id": oid, "name": name, "vicinity": addr,
+            "lat": la, "lng": lo,
+            "distance_km": round(_haversine_km(lat, lng, la, lo), 2),
+            "phone": tags.get("phone") or tags.get("contact:phone"),
+            "category": cat,
+            "rating": None, "reviews": None,
+            "hours": tags.get("opening_hours"), "photo": None,
+        })
+    out.sort(key=lambda d: d["distance_km"])
+    return out
+
+
+def _makerere_fallback(lat: float, lng: float) -> list:
+    res = [{
+        "place_id": f"mak-{i}", "name": d["name"], "vicinity": d["vicinity"],
+        "lat": d["lat"], "lng": d["lng"],
+        "distance_km": round(_haversine_km(lat, lng, d["lat"], d["lng"]), 2),
+        "phone": d.get("phone"), "category": d["category"],
+        "rating": d.get("rating"), "reviews": d.get("reviews"),
+        "hours": d.get("hours"), "photo": d.get("photo"),
+    } for i, d in enumerate(_MAKERERE_DEALERS)]
+    res.sort(key=lambda x: x["distance_km"])
+    return res
+
+
+@app.post("/parts-dealers", tags=["spare-parts"])
+async def parts_dealers(
+    body: NearbyStationsRequest,
+    _user: dict = Depends(_require_token),
+):
+    """Real spare-parts/repair dealers near the driver (OpenStreetMap), with a
+    Makerere-area fallback when OSM has nothing close (for the demo)."""
+    # Demo region: when the driver is in/around Makerere, return the curated set
+    # of real businesses (with real shop photos) rather than querying OSM.
+    if _haversine_km(body.lat, body.lng, 0.3296, 32.5670) <= 10:
+        return {"dealers": _makerere_fallback(body.lat, body.lng)[:8], "source": "makerere"}
+
+    elements: list = []
+    try:
+        elements = await asyncio.wait_for(_overpass_dealers(body.lat, body.lng, 12000), timeout=4)
+    except asyncio.TimeoutError:
+        logger.info("Overpass dealers slow — using Makerere fallback")
+
+    dealers = _build_dealers(body.lat, body.lng, elements)
+    source = "osm"
+    if len(dealers) < 3:
+        dealers = _makerere_fallback(body.lat, body.lng)
+        source = "fallback"
+    return {"dealers": dealers[:8], "source": source}

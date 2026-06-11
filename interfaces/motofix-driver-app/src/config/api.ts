@@ -273,6 +273,10 @@ export interface DiagnosisResult {
   required_parts?: PartEstimate[];
   service_fee_min?: number | null;
   service_fee_max?: number | null;
+  repair_fee_min?: number | null;
+  repair_fee_max?: number | null;
+  image_relevant?: boolean | null;
+  image_feedback?: string | null;
 }
 export interface ChatResponse { reply: string; diagnosis_ready: boolean; diagnosis?: DiagnosisResult; }
 
@@ -285,6 +289,13 @@ export const diagnosisService = {
   chat: (messages: ChatMessage[]) =>
     diagnosisApi.post<ChatResponse>('/chat', { messages }),
 
+  /** Voice note → text (any language → English) via Groq Whisper. */
+  transcribe: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return diagnosisApi.post<{ text: string }>('/transcribe', fd);
+  },
+
   diagnoseText: (description: string) =>
     diagnosisApi.post<DiagnosisResult>('/diagnose', { description }),
 
@@ -293,9 +304,10 @@ export const diagnosisService = {
     diagnosisApi.post<GuidedResult>('/diagnose/guided', { answers }),
 
   /** Legacy direct-diagnosis endpoint — kept for non-chat use cases */
-  diagnoseImage: (file: File) => {
+  diagnoseImage: (file: File, issue?: string) => {
     const fd = new FormData();
     fd.append('file', file);
+    if (issue) fd.append('issue', issue);
     return diagnosisApi.post<DiagnosisResult>('/diagnose/image', fd);
   },
 
@@ -359,13 +371,32 @@ export const partsService = {
 };
 
 // ── MOTOBOT — AI spare-parts pricing assistant ───────────────────────────────
-export interface PartPriceItem { name: string; price_min: number; price_max: number; note?: string | null }
+export interface PartPriceItem { name: string; price_min: number; price_max: number; new_min?: number; new_max?: number; used_min?: number; used_max?: number; note?: string | null }
 export interface PartPriceResult { items: PartPriceItem[]; currency: string }
+
+export interface RawDealer {
+  place_id: string;
+  name: string;
+  vicinity: string;
+  lat: number;
+  lng: number;
+  distance_km: number;
+  phone: string | null;
+  category: string;
+  rating?: number | null;
+  reviews?: number | null;
+  hours?: string | null;
+  photo?: string | null;
+}
+export interface DealersResult { dealers: RawDealer[]; source: 'osm' | 'fallback' }
 
 export const motobotService = {
   /** Ask MOTOBOT (AI) for UGX price ranges for the parts the driver wants to buy. */
   priceItems: (items: string[]) =>
     diagnosisApi.post<PartPriceResult>('/parts-price', { items }),
+  /** Real spare-parts dealers near the driver (OSM), Makerere-area fallback. */
+  findDealers: (lat: number, lng: number) =>
+    diagnosisApi.post<DealersResult>('/parts-dealers', { lat, lng }),
 };
 
 // Matching service — find nearby mechanics
