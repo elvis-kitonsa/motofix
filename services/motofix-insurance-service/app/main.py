@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 
-from .schemas import ClaimCreate, ClaimResponse
+from .schemas import ApplicationCreate, ApplicationResponse, ClaimCreate, ClaimResponse
 
 load_dotenv()
 
@@ -74,6 +74,30 @@ async def _create_tables(pool: asyncpg.Pool):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS applications (
+                id            SERIAL PRIMARY KEY,
+                reference     VARCHAR(20) UNIQUE NOT NULL,
+                user_id       INTEGER NOT NULL,
+                user_phone    VARCHAR(20) NOT NULL DEFAULT '',
+                insurer_id    VARCHAR(40) NOT NULL,
+                insurer_name  VARCHAR(120) NOT NULL,
+                cover_type    VARCHAR(40) NOT NULL,
+                cover_label   VARCHAR(80) NOT NULL,
+                vehicle_reg   VARCHAR(40) NOT NULL,
+                vehicle_make  VARCHAR(60) DEFAULT '',
+                vehicle_model VARCHAR(60) DEFAULT '',
+                vehicle_year  VARCHAR(10) DEFAULT '',
+                period        VARCHAR(30) NOT NULL DEFAULT '1 year',
+                notes         TEXT DEFAULT '',
+                status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        # Tie claims to the driver's chosen insurer (added after the original schema).
+        await conn.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS insurer_id VARCHAR(40)")
+        await conn.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS insurer_name VARCHAR(120)")
     logger.info("Insurance tables ready")
 
 
@@ -157,6 +181,34 @@ def _generate_ref() -> str:
     return f"CLM-{year}-{suffix}"
 
 
+def _app_ref() -> str:
+    return f"POL-{datetime.now().year}-{''.join(random.choices(string.digits, k=6))}"
+
+
+# ── Insurer catalog — motor insurers commonly used in Kampala/Uganda ────────────
+# Real companies; contacts are intentionally left for admin to configure. Edit here
+# (or later move to a DB table) to add/remove insurers.
+INSURERS = [
+    {"id": "uap",       "name": "UAP Old Mutual Insurance",         "short": "UAP Old Mutual",   "tagline": "One of Uganda's largest general insurers."},
+    {"id": "jubilee",   "name": "Jubilee Allianz General Insurance","short": "Jubilee Allianz",  "tagline": "Backed by global insurer Allianz."},
+    {"id": "sanlam",    "name": "Sanlam General Insurance Uganda",  "short": "Sanlam",           "tagline": "Pan-African insurer with strong motor cover."},
+    {"id": "britam",    "name": "Britam Insurance Uganda",          "short": "Britam",           "tagline": "Wide branch network and quick claims."},
+    {"id": "icea",      "name": "ICEA Lion General Insurance",      "short": "ICEA Lion",        "tagline": "Trusted East-African insurer."},
+    {"id": "goldstar",  "name": "Goldstar Insurance",               "short": "Goldstar",         "tagline": "Known for affordable motor cover."},
+    {"id": "cic",       "name": "CIC Africa Insurance (Uganda)",    "short": "CIC Africa",       "tagline": "Co-operative insurer with flexible plans."},
+    {"id": "nic",       "name": "NIC General Insurance",            "short": "NIC",              "tagline": "Long-established Ugandan insurer."},
+    {"id": "liberty",   "name": "Liberty General Insurance Uganda", "short": "Liberty",          "tagline": "Part of the Liberty group."},
+    {"id": "apa",       "name": "APA Insurance (Uganda)",           "short": "APA",              "tagline": "Regional insurer with quick turnaround."},
+    {"id": "statewide", "name": "Statewide Insurance Company",      "short": "Statewide (SWICO)","tagline": "One of Uganda's oldest insurers."},
+]
+
+COVER_TYPES = [
+    {"id": "third_party",            "label": "Third-Party Only",          "blurb": "The legal minimum. Covers injury or damage you cause to other people and their property."},
+    {"id": "third_party_fire_theft", "label": "Third-Party, Fire & Theft", "blurb": "Adds cover if your vehicle is stolen or damaged by fire."},
+    {"id": "comprehensive",          "label": "Comprehensive",             "blurb": "Full cover — including accidental damage to your own vehicle."},
+]
+
+
 def _save_photo(claim_ref: str, slot: str, data_url: str) -> Optional[str]:
     try:
         header, b64 = data_url.split(",", 1)
@@ -177,6 +229,65 @@ def _save_photo(claim_ref: str, slot: str, data_url: str) -> Optional[str]:
 @app.get("/health", tags=["system"])
 async def health():
     return {"status": "ok", "service": "motofix-insurance-service"}
+
+
+@app.get("/insurers", tags=["insurers"])
+async def list_insurers():
+    """Public catalog of motor insurers + cover types the driver can apply for."""
+    return {"insurers": INSURERS, "cover_types": COVER_TYPES}
+
+
+# ── Applications (apply for cover) ──────────────────────────────────────────────
+
+@app.post("/applications", response_model=ApplicationResponse, status_code=201, tags=["applications"])
+async def apply_insurance(body: ApplicationCreate, user: dict = Depends(_require_token)):
+    """File an application to be connected to an insurer for cover (lead — insurer follows up)."""
+    pool: asyncpg.Pool = app.state.pool
+    uid = _user_id(user); phone = _user_phone(user)
+    ref = _app_ref()
+    for _ in range(10):
+        if not await pool.fetchval("SELECT 1 FROM applications WHERE reference=$1", ref):
+            break
+        ref = _app_ref()
+    row = await pool.fetchrow("""
+        INSERT INTO applications (
+            reference, user_id, user_phone, insurer_id, insurer_name,
+            cover_type, cover_label, vehicle_reg, vehicle_make, vehicle_model,
+            vehicle_year, period, notes, status
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending')
+        RETURNING *
+    """,
+        ref, uid, phone, body.insurer_id, body.insurer_name,
+        body.cover_type, body.cover_label, body.vehicle_reg, body.vehicle_make, body.vehicle_model,
+        body.vehicle_year, body.period, body.notes,
+    )
+    logger.info("Insurance application — ref=%s user=%s insurer=%s cover=%s", ref, uid, body.insurer_id, body.cover_type)
+    return ApplicationResponse.from_record(dict(row))
+
+
+@app.get("/applications", response_model=list[ApplicationResponse], tags=["applications"])
+async def list_applications(user: dict = Depends(_require_token)):
+    """All of the authenticated driver's insurance applications/policies, newest first."""
+    pool: asyncpg.Pool = app.state.pool
+    rows = await pool.fetch(
+        "SELECT * FROM applications WHERE user_id=$1 ORDER BY created_at DESC", _user_id(user)
+    )
+    return [ApplicationResponse.from_record(dict(r)) for r in rows]
+
+
+@app.patch("/applications/{reference}/status", response_model=ApplicationResponse, tags=["applications"])
+async def update_application_status(reference: str, status: str, user: dict = Depends(_require_token)):
+    """Update an application's status (admin/insurer use)."""
+    valid = {"pending", "under_review", "active", "rejected", "expired", "cancelled"}
+    if status not in valid:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(valid)}")
+    pool: asyncpg.Pool = app.state.pool
+    row = await pool.fetchrow(
+        "UPDATE applications SET status=$1, updated_at=NOW() WHERE reference=$2 RETURNING *", status, reference
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return ApplicationResponse.from_record(dict(row))
 
 
 @app.post("/claims", response_model=ClaimResponse, status_code=201, tags=["claims"])
@@ -201,15 +312,15 @@ async def submit_claim(body: ClaimCreate, user: dict = Depends(_require_token)):
                 claim_type, claim_type_label,
                 incident_date, incident_time,
                 location, description,
-                injuries, third_party, status
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending')
+                injuries, third_party, insurer_id, insurer_name, status
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending')
             RETURNING id
         """,
             ref, uid, phone,
             body.type, body.type_label,
             body.incident_date, body.incident_time,
             body.location, body.description,
-            body.injuries, body.third_party,
+            body.injuries, body.third_party, body.insurer_id, body.insurer_name,
         )
 
         # Persist photos to disk and record paths
