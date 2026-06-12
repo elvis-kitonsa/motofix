@@ -24,10 +24,10 @@ export default defineConfig(({ mode }) => ({
       key: './cert-key.pem',
     },
     proxy: {
-      '/auth':         { target: 'http://localhost:8000', changeOrigin: true },
-      '/users':        { target: 'http://localhost:8000', changeOrigin: true },
+      '/auth':         { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/users':        { target: 'http://127.0.0.1:8000', changeOrigin: true },
       '/requests': {
-        target: 'http://localhost:8001', changeOrigin: true,
+        target: 'http://127.0.0.1:8001', changeOrigin: true,
         bypass: (req) => {
           // Browser page navigations (Accept: text/html) should be handled by
           // the SPA, not proxied to the API — prevents raw JSON on hard refresh.
@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => ({
         },
       },
       '/ws': {
-        target: 'http://localhost:8001', changeOrigin: true, ws: true,
+        target: 'http://127.0.0.1:8001', changeOrigin: true, ws: true,
         configure: (proxy) => {
           proxy.on('error', (err: NodeJS.ErrnoException) => {
             if (err.code === 'ECONNRESET') return // browser closed the tab/refreshed — harmless
@@ -43,15 +43,17 @@ export default defineConfig(({ mode }) => ({
           })
         },
       },
-      '/feature-flags':{ target: 'http://localhost:8001', changeOrigin: true },
-      '/payments':     { target: 'http://localhost:8001', changeOrigin: true },
-      '/match':        { target: 'http://localhost:8003', changeOrigin: true },
-      '/chat':         { target: 'http://localhost:8007', changeOrigin: true },
-      '/diagnose':     { target: 'http://localhost:8007', changeOrigin: true },
-      '/parts-price':  { target: 'http://localhost:8007', changeOrigin: true },
-      '/parts-dealers':{ target: 'http://localhost:8007', changeOrigin: true },
-      '/fuel-advisor': { target: 'http://localhost:8007', changeOrigin: true },
-      '/claims':       { target: 'http://localhost:8006', changeOrigin: true },
+      '/feature-flags':{ target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/payments':     { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/match':        { target: 'http://127.0.0.1:8003', changeOrigin: true },
+      '/chat':         { target: 'http://127.0.0.1:8007', changeOrigin: true },
+      '/diagnose':     { target: 'http://127.0.0.1:8007', changeOrigin: true },
+      '/parts-price':  { target: 'http://127.0.0.1:8007', changeOrigin: true },
+      '/parts-dealers':{ target: 'http://127.0.0.1:8007', changeOrigin: true },
+      '/fuel-advisor': { target: 'http://127.0.0.1:8007', changeOrigin: true },
+      '/claims':       { target: 'http://127.0.0.1:8006', changeOrigin: true },
+      '/insurers':     { target: 'http://127.0.0.1:8006', changeOrigin: true },
+      '/applications': { target: 'http://127.0.0.1:8006', changeOrigin: true },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

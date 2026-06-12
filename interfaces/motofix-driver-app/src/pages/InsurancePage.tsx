@@ -8,7 +8,7 @@ import {
   ChevronLeft, Loader2, Copy, Check, RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { insuranceService, ClaimRecord } from '@/config/api';
+import { insuranceService, ClaimRecord, ApplicationRecord, Insurer, CoverType } from '@/config/api';
 import { toast } from 'sonner';
 
 /* ── Palette ── */
@@ -26,19 +26,6 @@ const CLAIM_TYPES = [
   { id: 'other',      label: 'Other',            desc: 'Something else',              icon: HelpCircle, color: '#94a3b8', bg: 'rgba(148,163,184,0.08)' },
 ];
 
-/* ── Mock policy data ── */
-const MOCK_POLICY = {
-  number:    'MFX-UG-2024-00847',
-  type:      'Comprehensive',
-  insurer:   'UAP Old Mutual Insurance',
-  expires:   'December 31, 2025',
-  premium:   'UGX 120,000 / month',
-  phone:     '+256 312 300 700',
-  whatsapp:  '256312300700',
-  excess:    'UGX 500,000',
-  status:    'Active',
-};
-
 /* ── Photo label slots ── */
 const PHOTO_SLOTS = [
   'Front view',
@@ -49,7 +36,36 @@ const PHOTO_SLOTS = [
   'Scene / surroundings',
 ];
 
-type Step = 'overview' | 'type' | 'details' | 'evidence' | 'review' | 'done';
+/* ── Fallback catalog (mirrors the backend) so the Apply page is never empty ── */
+const FALLBACK_INSURERS: Insurer[] = [
+  { id: 'uap',       name: 'UAP Old Mutual Insurance',         short: 'UAP Old Mutual',    tagline: "One of Uganda's largest general insurers." },
+  { id: 'jubilee',   name: 'Jubilee Allianz General Insurance',short: 'Jubilee Allianz',   tagline: 'Backed by global insurer Allianz.' },
+  { id: 'sanlam',    name: 'Sanlam General Insurance Uganda',  short: 'Sanlam',            tagline: 'Pan-African insurer with strong motor cover.' },
+  { id: 'britam',    name: 'Britam Insurance Uganda',          short: 'Britam',            tagline: 'Wide branch network and quick claims.' },
+  { id: 'icea',      name: 'ICEA Lion General Insurance',      short: 'ICEA Lion',         tagline: 'Trusted East-African insurer.' },
+  { id: 'goldstar',  name: 'Goldstar Insurance',               short: 'Goldstar',          tagline: 'Known for affordable motor cover.' },
+  { id: 'cic',       name: 'CIC Africa Insurance (Uganda)',    short: 'CIC Africa',        tagline: 'Co-operative insurer with flexible plans.' },
+  { id: 'nic',       name: 'NIC General Insurance',            short: 'NIC',               tagline: 'Long-established Ugandan insurer.' },
+  { id: 'liberty',   name: 'Liberty General Insurance Uganda', short: 'Liberty',           tagline: 'Part of the Liberty group.' },
+  { id: 'apa',       name: 'APA Insurance (Uganda)',           short: 'APA',               tagline: 'Regional insurer with quick turnaround.' },
+  { id: 'statewide', name: 'Statewide Insurance Company',      short: 'Statewide (SWICO)', tagline: "One of Uganda's oldest insurers." },
+];
+const FALLBACK_COVERS: CoverType[] = [
+  { id: 'third_party',            label: 'Third-Party Only',          blurb: 'The legal minimum. Covers injury or damage you cause to other people and their property.' },
+  { id: 'third_party_fire_theft', label: 'Third-Party, Fire & Theft', blurb: 'Adds cover if your vehicle is stolen or damaged by fire.' },
+  { id: 'comprehensive',          label: 'Comprehensive',             blurb: 'Full cover — including accidental damage to your own vehicle.' },
+];
+
+type Step = 'overview' | 'apply' | 'apply_done' | 'type' | 'details' | 'evidence' | 'review' | 'done';
+
+const APP_STATUS: Record<string, { color: string; label: string }> = {
+  pending:      { color: '#fcd34d', label: 'Pending' },
+  under_review: { color: '#60a5fa', label: 'Under review' },
+  active:       { color: '#34D399', label: 'Active' },
+  rejected:     { color: '#f87171', label: 'Rejected' },
+  expired:      { color: '#94a3b8', label: 'Expired' },
+  cancelled:    { color: '#94a3b8', label: 'Cancelled' },
+};
 
 interface ClaimDraft {
   type: string;
@@ -178,11 +194,31 @@ export default function InsurancePage() {
   const [claims,       setClaims]       = useState<ClaimRecord[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
 
+  /* ── Insurance applications / policy ── */
+  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [insurers,     setInsurers]     = useState<Insurer[]>(FALLBACK_INSURERS);
+  const [coverTypes,   setCoverTypes]   = useState<CoverType[]>(FALLBACK_COVERS);
+  const policy = applications[0] ?? null; // newest application = the driver's current cover
+
+  /* ── Apply-for-cover form ── */
+  const [aInsurer, setAInsurer] = useState<Insurer | null>(null);
+  const [aCover,   setACover]   = useState<CoverType | null>(null);
+  const [aVeh,     setAVeh]     = useState({ reg: '', make: '', model: '', year: '', period: '1 year' });
+  const [applying, setApplying] = useState(false);
+  const [appRef,   setAppRef]   = useState('');
+
   const patch = (update: Partial<ClaimDraft>) => setDraft(d => ({ ...d, ...update }));
 
-  /* ── Load past claims on mount ── */
+  /* ── Load claims, applications & insurer catalog on mount ── */
   useEffect(() => {
     fetchClaims();
+    fetchApplications();
+    insuranceService.insurers()
+      .then(r => {
+        if (r.data?.insurers?.length) setInsurers(r.data.insurers);
+        if (r.data?.cover_types?.length) setCoverTypes(r.data.cover_types);
+      })
+      .catch(() => { /* keep fallback catalog */ });
   }, []);
 
   const fetchClaims = async () => {
@@ -194,6 +230,37 @@ export default function InsurancePage() {
       // silently fail — user may not have any claims yet
     } finally {
       setClaimsLoading(false);
+    }
+  };
+
+  const fetchApplications = async () => {
+    try { const r = await insuranceService.applications(); setApplications(r.data); }
+    catch { /* none yet */ }
+  };
+
+  /* ── Submit an insurance application ── */
+  const submitApplication = async () => {
+    if (!aInsurer || !aCover || !aVeh.reg.trim()) return;
+    setApplying(true);
+    try {
+      const res = await insuranceService.apply({
+        insurer_id:   aInsurer.id,
+        insurer_name: aInsurer.name,
+        cover_type:   aCover.id,
+        cover_label:  aCover.label,
+        vehicle_reg:  aVeh.reg.trim(),
+        vehicle_make: aVeh.make.trim(),
+        vehicle_model: aVeh.model.trim(),
+        vehicle_year: aVeh.year.trim(),
+        period:       aVeh.period,
+      });
+      setAppRef(res.data.reference);
+      setStep('apply_done');
+      fetchApplications();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? 'Application failed. Please try again.');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -230,6 +297,8 @@ export default function InsurancePage() {
         description:    draft.description,
         injuries:       draft.injuries,
         third_party:    draft.thirdParty,
+        insurer_id:     policy?.insurer_id ?? null,
+        insurer_name:   policy?.insurer_name ?? null,
         photos:         draft.photos,
       });
       setRefNum(res.data.reference);
@@ -254,6 +323,8 @@ export default function InsurancePage() {
   /* ── Back logic ── */
   const handleBack = () => {
     if (step === 'overview') navigate(-1);
+    else if (step === 'apply')      setStep('overview');
+    else if (step === 'apply_done') { setStep('overview'); setAInsurer(null); setACover(null); setAVeh({ reg: '', make: '', model: '', year: '', period: '1 year' }); }
     else if (step === 'type')     setStep('overview');
     else if (step === 'details')  setStep('type');
     else if (step === 'evidence') setStep('details');
@@ -262,7 +333,7 @@ export default function InsurancePage() {
   };
 
   /* ── Step numbers ── */
-  const stepNum: Record<Step, number> = { overview: 0, type: 1, details: 2, evidence: 3, review: 4, done: 5 };
+  const stepNum: Record<Step, number> = { overview: 0, apply: 0, apply_done: 0, type: 1, details: 2, evidence: 3, review: 4, done: 5 };
 
   const selectedType = CLAIM_TYPES.find(t => t.id === draft.type);
 
@@ -290,9 +361,13 @@ export default function InsurancePage() {
         </button>
         <div style={{ flex: 1, textAlign: 'center' }}>
           <p style={{ color: 'var(--text-hi)', fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
-            {step === 'overview' ? 'Insurance' : step === 'done' ? 'Claim Submitted' : 'File a Claim'}
+            {step === 'overview' ? 'Insurance'
+              : step === 'apply' ? 'Apply for Insurance'
+              : step === 'apply_done' ? 'Application Sent'
+              : step === 'done' ? 'Claim Submitted'
+              : 'File a Claim'}
           </p>
-          {step !== 'overview' && step !== 'done' && (
+          {['type', 'details', 'evidence', 'review'].includes(step) && (
             <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 2 }}>
               Step {stepNum[step]} of 4
             </p>
@@ -317,42 +392,74 @@ export default function InsurancePage() {
         {step === 'overview' && (
           <div style={{ padding: '20px 18px 32px' }}>
 
-            {/* Coverage card */}
-            <div style={{
-              borderRadius: 20, marginBottom: 20,
-              background: `linear-gradient(135deg, ${G}18 0%, var(--overlay-bg) 100%)`,
-              border: `1.5px solid ${G}35`,
-              padding: '18px 18px 16px',
-              boxShadow: `0 0 32px ${G}10`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div>
-                  <p style={{ color: 'var(--text-dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 700, marginBottom: 4 }}>Your Policy</p>
-                  <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 17 }}>{MOCK_POLICY.type}</p>
-                  <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 2 }}>{MOCK_POLICY.insurer}</p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: `${G}18`, border: `1px solid ${G}35` }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: G, animation: 'ins-blink 2s ease-in-out infinite' }} />
-                  <span style={{ color: G, fontSize: 11, fontWeight: 700 }}>{MOCK_POLICY.status}</span>
-                </div>
-              </div>
-
-              <div style={{ height: 1, background: 'var(--surface-4)', marginBottom: 12 }} />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {[
-                  { label: 'Policy Number', val: MOCK_POLICY.number },
-                  { label: 'Expires',       val: MOCK_POLICY.expires },
-                  { label: 'Premium',       val: MOCK_POLICY.premium },
-                  { label: 'Excess',        val: MOCK_POLICY.excess  },
-                ].map(({ label, val }) => (
-                  <div key={label}>
-                    <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 600, marginBottom: 2 }}>{label}</p>
-                    <p style={{ color: 'var(--text-md)', fontSize: 12, fontWeight: 700 }}>{val}</p>
+            {/* Coverage card — real policy/application, or an Apply CTA */}
+            {policy ? (
+              <div style={{
+                borderRadius: 20, marginBottom: 14,
+                background: `linear-gradient(135deg, ${G}18 0%, var(--overlay-bg) 100%)`,
+                border: `1.5px solid ${G}35`,
+                padding: '18px 18px 16px',
+                boxShadow: `0 0 32px ${G}10`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div>
+                    <p style={{ color: 'var(--text-dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 700, marginBottom: 4 }}>Your Cover</p>
+                    <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 17 }}>{policy.cover_label}</p>
+                    <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 2 }}>{policy.insurer_name}</p>
                   </div>
-                ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: `${(APP_STATUS[policy.status]?.color ?? G)}18`, border: `1px solid ${(APP_STATUS[policy.status]?.color ?? G)}35` }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: APP_STATUS[policy.status]?.color ?? G, animation: 'ins-blink 2s ease-in-out infinite' }} />
+                    <span style={{ color: APP_STATUS[policy.status]?.color ?? G, fontSize: 11, fontWeight: 700 }}>{APP_STATUS[policy.status]?.label ?? policy.status}</span>
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: 'var(--surface-4)', marginBottom: 12 }} />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[
+                    { label: 'Reference', val: policy.reference },
+                    { label: 'Vehicle',   val: policy.vehicle_reg || '—' },
+                    { label: 'Period',    val: policy.period },
+                    { label: 'Applied',   val: new Date(policy.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
+                  ].map(({ label, val }) => (
+                    <div key={label}>
+                      <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 600, marginBottom: 2 }}>{label}</p>
+                      <p style={{ color: 'var(--text-md)', fontSize: 12, fontWeight: 700 }}>{val}</p>
+                    </div>
+                  ))}
+                </div>
+                {policy.status === 'pending' && (
+                  <p style={{ color: 'var(--text-faint)', fontSize: 10.5, marginTop: 12, lineHeight: 1.5 }}>
+                    Application received — {policy.insurer_name} will contact you to finalise cover and arrange your premium.
+                  </p>
+                )}
               </div>
-            </div>
+            ) : (
+              <div style={{ borderRadius: 20, marginBottom: 14, background: 'var(--surface-1)', border: '1px solid var(--border-2)', padding: '20px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: `${G}14`, border: `1px solid ${G}30`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Shield style={{ width: 19, height: 19, color: G }} />
+                  </div>
+                  <div>
+                    <p style={{ color: 'var(--text-hi)', fontWeight: 800, fontSize: 15 }}>No cover yet</p>
+                    <p style={{ color: 'var(--text-dim)', fontSize: 12 }}>Apply for motor insurance through MOTOFIX</p>
+                  </div>
+                </div>
+                <p style={{ color: 'var(--text-faint)', fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>
+                  Choose from insurers used across Kampala (third-party or comprehensive). MOTOFIX files your application and the insurer follows up to set it up.
+                </p>
+                <button onClick={() => setStep('apply')} style={{ width: '100%', height: 50, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${G}, ${GD})`, color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <Shield style={{ width: 18, height: 18 }} /> Apply for Insurance
+                </button>
+              </div>
+            )}
+
+            {/* Apply for (another) cover — when a policy already exists */}
+            {policy && (
+              <button onClick={() => setStep('apply')} style={{ width: '100%', height: 46, borderRadius: 14, border: `1.5px solid ${G}40`, background: `${G}10`, color: G, fontWeight: 800, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14 }}>
+                <Plus style={{ width: 17, height: 17 }} /> Apply for another policy
+              </button>
+            )}
 
             {/* File a Claim CTA */}
             <button
@@ -425,36 +532,22 @@ export default function InsurancePage() {
               )}
             </div>
 
-            {/* Contact insurer */}
-            <div style={{ borderRadius: 18, overflow: 'hidden', border: '1px solid var(--border-2)', marginBottom: 20 }}>
-              <div style={{ padding: '12px 16px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border-1)' }}>
-                <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em' }}>Contact Insurer</p>
+            {/* Need help? → MOTOFIX support */}
+            <button onClick={() => navigate('/contact-support')} style={{ width: '100%', textAlign: 'left', borderRadius: 18, overflow: 'hidden', border: '1px solid var(--border-2)', marginBottom: 20, background: 'var(--surface-1)', cursor: 'pointer', padding: 0 }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-1)' }}>
+                <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em' }}>Need help?</p>
               </div>
-              {[
-                { label: 'Call UAP Old Mutual', sub: MOCK_POLICY.phone, icon: Phone, color: '#22C55E', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.2)', href: `tel:${MOCK_POLICY.phone}` },
-                { label: 'WhatsApp',            sub: 'Send a message',  icon: MessageCircle, color: '#25D366', bg: 'rgba(37,211,102,0.1)', border: 'rgba(37,211,102,0.2)', href: `https://wa.me/${MOCK_POLICY.whatsapp}` },
-              ].map(({ label, sub, icon: Ic, color, bg, border, href }, i) => (
-                <a key={label} href={href} target="_blank" rel="noreferrer" style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '14px 16px',
-                  borderBottom: i === 0 ? '1px solid var(--border-1)' : 'none',
-                  textDecoration: 'none', background: 'var(--surface-1)',
-                  transition: 'background 0.2s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = bg)}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                >
-                  <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: bg, border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ic style={{ width: 18, height: 18, color }} />
-                  </div>
-                  <div>
-                    <p style={{ color: 'var(--text-hi)', fontWeight: 700, fontSize: 13 }}>{label}</p>
-                    <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 1 }}>{sub}</p>
-                  </div>
-                  <ChevronRight style={{ width: 15, height: 15, color: 'var(--text-faint)', marginLeft: 'auto' }} />
-                </a>
-              ))}
-            </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageCircle style={{ width: 18, height: 18, color: '#22C55E' }} />
+                </div>
+                <div>
+                  <p style={{ color: 'var(--text-hi)', fontWeight: 700, fontSize: 13 }}>Contact MOTOFIX support</p>
+                  <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 1 }}>{policy ? `Questions about your ${policy.insurer_name} cover` : 'Questions about applying or claiming'}</p>
+                </div>
+                <ChevronRight style={{ width: 15, height: 15, color: 'var(--text-faint)', marginLeft: 'auto' }} />
+              </div>
+            </button>
 
             {/* Tips */}
             <div style={{ borderRadius: 18, padding: '16px 16px', background: 'var(--surface-1)', border: '1px solid var(--border-2)' }}>
@@ -474,6 +567,104 @@ export default function InsurancePage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ════════════════════
+            APPLY FOR INSURANCE
+        ════════════════════ */}
+        {step === 'apply' && (
+          <div style={{ padding: '18px 18px 40px' }}>
+            <p style={{ color: 'var(--text-lo)', fontSize: 12.5, lineHeight: 1.55, marginBottom: 18 }}>
+              Pick an insurer and the cover you want. MOTOFIX records your application and the insurer follows up to finalise cover and arrange your premium.
+            </p>
+
+            {/* 1 · Insurer */}
+            <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 10 }}>1 · Choose insurer</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+              {insurers.map(ins => {
+                const sel = aInsurer?.id === ins.id;
+                return (
+                  <button key={ins.id} onClick={() => setAInsurer(ins)} style={{ textAlign: 'left', borderRadius: 14, padding: '12px 14px', border: `1.5px solid ${sel ? G : 'var(--border-2)'}`, background: sel ? `${G}10` : 'var(--surface-1)', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: sel ? `${G}1e` : 'var(--surface-3)', border: `1px solid ${sel ? G + '40' : 'var(--border-2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Shield style={{ width: 16, height: 16, color: sel ? G : 'var(--text-dim)' }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: 'var(--text-hi)', fontWeight: 700, fontSize: 13.5 }}>{ins.short}</p>
+                        <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 1 }}>{ins.tagline}</p>
+                      </div>
+                      {sel && <Check style={{ width: 16, height: 16, color: G, flexShrink: 0 }} />}
+                    </div>
+                  </button>
+                );
+              })}
+              {insurers.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 12 }}>Loading insurers…</p>}
+            </div>
+
+            {/* 2 · Cover type */}
+            <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 10 }}>2 · Choose cover</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+              {coverTypes.map(c => {
+                const sel = aCover?.id === c.id;
+                return (
+                  <button key={c.id} onClick={() => setACover(c)} style={{ textAlign: 'left', borderRadius: 14, padding: '12px 14px', border: `1.5px solid ${sel ? G : 'var(--border-2)'}`, background: sel ? `${G}10` : 'var(--surface-1)', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ color: 'var(--text-hi)', fontWeight: 700, fontSize: 13.5 }}>{c.label}</p>
+                        <p style={{ color: 'var(--text-dim)', fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>{c.blurb}</p>
+                      </div>
+                      {sel && <Check style={{ width: 16, height: 16, color: G, flexShrink: 0, marginTop: 2 }} />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 3 · Vehicle */}
+            <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 10 }}>3 · Your vehicle</p>
+            <Field label="Number plate *" value={aVeh.reg} onChange={(v: string) => setAVeh(s => ({ ...s, reg: v }))} placeholder="e.g. UAX 123A" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <Field label="Make" value={aVeh.make} onChange={(v: string) => setAVeh(s => ({ ...s, make: v }))} placeholder="Toyota" />
+              <Field label="Model" value={aVeh.model} onChange={(v: string) => setAVeh(s => ({ ...s, model: v }))} placeholder="Premio" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <Field label="Year" value={aVeh.year} onChange={(v: string) => setAVeh(s => ({ ...s, year: v }))} placeholder="2015" type="number" />
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ color: 'var(--text-dim)', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>Period</p>
+                <select value={aVeh.period} onChange={e => setAVeh(s => ({ ...s, period: e.target.value }))} style={{ width: '100%', padding: '11px 12px', borderRadius: 12, background: 'var(--surface-3)', border: '1px solid var(--border-2)', color: 'var(--text-hi)', fontSize: 14, outline: 'none' }}>
+                  <option>1 year</option><option>6 months</option><option>3 months</option><option>1 month</option>
+                </select>
+              </div>
+            </div>
+
+            <button onClick={submitApplication} disabled={!aInsurer || !aCover || !aVeh.reg.trim() || applying}
+              style={{ width: '100%', height: 54, borderRadius: 16, border: 'none', marginTop: 8, cursor: (!aInsurer || !aCover || !aVeh.reg.trim() || applying) ? 'default' : 'pointer', opacity: (!aInsurer || !aCover || !aVeh.reg.trim()) ? 0.5 : 1, background: `linear-gradient(135deg, ${G}, ${GD})`, color: '#000', fontWeight: 900, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              {applying ? <Loader2 style={{ width: 19, height: 19, animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 style={{ width: 19, height: 19 }} />}
+              {applying ? 'Submitting…' : 'Submit application'}
+            </button>
+          </div>
+        )}
+
+        {step === 'apply_done' && (
+          <div style={{ padding: '40px 22px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: `${G}18`, border: `2px solid ${G}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <CheckCircle2 style={{ width: 36, height: 36, color: G }} />
+            </div>
+            <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 20, marginBottom: 6 }}>Application sent</p>
+            <p style={{ color: 'var(--text-lo)', fontSize: 13.5, lineHeight: 1.55, maxWidth: 300, marginBottom: 16 }}>
+              Your application to <strong style={{ color: 'var(--text-hi)' }}>{aInsurer?.name}</strong>{aCover ? ` for ${aCover.label}` : ''} has been received. They’ll contact you to finalise cover and arrange your premium.
+            </p>
+            {appRef && (
+              <div style={{ borderRadius: 12, padding: '10px 16px', background: 'var(--surface-1)', border: '1px solid var(--border-2)', marginBottom: 22 }}>
+                <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>Reference </span>
+                <span style={{ color: G, fontWeight: 800, fontSize: 13 }}>{appRef}</span>
+              </div>
+            )}
+            <button onClick={() => { setStep('overview'); setAInsurer(null); setACover(null); setAVeh({ reg: '', make: '', model: '', year: '', period: '1 year' }); }}
+              style={{ width: '100%', maxWidth: 320, height: 50, borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${G}, ${GD})`, color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
+              Back to Insurance
+            </button>
           </div>
         )}
 
@@ -730,10 +921,10 @@ export default function InsurancePage() {
               )}
             </div>
 
-            {/* Policy reference */}
+            {/* Linked insurer */}
             <div style={{ padding: '12px 16px', borderRadius: 14, background: `${G}08`, border: `1px solid ${G}25`, marginBottom: 6 }}>
-              <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 3 }}>Policy</p>
-              <p style={{ color: G, fontWeight: 700, fontSize: 13 }}>{MOCK_POLICY.number} · {MOCK_POLICY.insurer}</p>
+              <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 3 }}>Insurer</p>
+              <p style={{ color: G, fontWeight: 700, fontSize: 13 }}>{policy ? `${policy.insurer_name} · ${policy.reference}` : 'Not linked to a policy — apply for cover from the Insurance page'}</p>
             </div>
           </div>
         )}
@@ -757,7 +948,7 @@ export default function InsurancePage() {
               Claim Submitted!
             </p>
             <p style={{ color: 'var(--text-lo)', fontSize: 13, textAlign: 'center', lineHeight: 1.6, maxWidth: 280, marginBottom: 28 }}>
-              Your {draft.typeLabel.toLowerCase()} claim has been filed with {MOCK_POLICY.insurer}. You will receive a confirmation shortly.
+              Your {draft.typeLabel.toLowerCase()} claim has been recorded{policy ? ` and linked to your ${policy.insurer_name} cover` : ''}. You will receive a confirmation shortly.
             </p>
 
             {/* Reference number */}
@@ -781,7 +972,7 @@ export default function InsurancePage() {
             <div style={{ width: '100%', maxWidth: 340, borderRadius: 16, padding: '16px 16px', background: 'var(--surface-1)', border: '1px solid var(--border-2)', marginBottom: 24 }}>
               <p style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 10 }}>What Happens Next</p>
               {[
-                `${MOCK_POLICY.insurer} will contact you within 24–48 hours.`,
+                `${policy ? policy.insurer_name : 'Your insurer'} will contact you within 24–48 hours.`,
                 'A loss adjuster may be assigned to assess the damage.',
                 'Keep your reference number for all follow-up communication.',
               ].map((item, i) => (
@@ -792,16 +983,15 @@ export default function InsurancePage() {
               ))}
             </div>
 
-            <a href={`tel:${MOCK_POLICY.phone}`} style={{
+            <button onClick={() => navigate('/contact-support')} style={{
               width: '100%', maxWidth: 340, height: 50, borderRadius: 14,
               background: 'rgba(34,197,94,0.1)', border: '1.5px solid rgba(34,197,94,0.25)',
-              color: '#4ade80', fontWeight: 700, fontSize: 14,
+              color: '#4ade80', fontWeight: 700, fontSize: 14, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              textDecoration: 'none',
             }}>
-              <Phone style={{ width: 16, height: 16 }} />
-              Call Insurer Directly
-            </a>
+              <MessageCircle style={{ width: 16, height: 16 }} />
+              Contact MOTOFIX support
+            </button>
           </div>
         )}
       </div>

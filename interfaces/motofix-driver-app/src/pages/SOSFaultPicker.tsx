@@ -391,7 +391,7 @@ export default function SOSFaultPicker() {
         position: 'relative', zIndex: 1,
       }}>
         <button
-          onClick={() => navigate('/diagnose')}
+          onClick={() => navigate('/fault-chat', { state: { issueType: 'other' } })}
           className="sos-ai-btn"
           style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,

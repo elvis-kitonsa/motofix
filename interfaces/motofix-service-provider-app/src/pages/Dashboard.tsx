@@ -365,20 +365,21 @@ export default function Dashboard() {
       if (request.location_lat && request.location_lng) {
         etaMinutes = await computeEtaMinutes(request.location_lat, request.location_lng)
       }
+      // Accept ONLY — sets status 'accepted' and notifies the driver once.
+      // The journey (en_route → "your mechanic is on the way") is a SEPARATE,
+      // explicit step: the mechanic taps "🚗 I'm On My Way" in the active job.
+      // (Previously this auto-advanced to en_route, so the driver got the
+      //  "accepted" + "on the way" alerts together while accept was still in flight.)
       await jobService.accept(request.id, etaMinutes)
-      // Accepting means you're heading out — start the journey immediately so
-      // there's no separate "Begin Journey" tap to forget. The driver's live
-      // map + ETA start right away.
-      await jobService.updateStatus(request.id, 'en_route', { eta_minutes: SIM_MINUTES })
       const now = new Date().toISOString()
-      const active = { ...request, status: 'en_route' as const, accepted_at: now, en_route_at: now, eta_minutes: SIM_MINUTES }
+      const active = { ...request, status: 'accepted' as const, accepted_at: now, eta_minutes: etaMinutes ?? undefined }
       setActiveRequest(active)
       setPendingAlert(null)
       setPendingCount(c => Math.max(0, c - 1))
       // Picking up a job counts immediately toward Today / This-Week.
       loadHistoryStats(mechIdRef.current)
       switchTab('jobs')
-      toast.success("Job accepted — you're on your way! The driver has been notified.")
+      toast.success("Job accepted — the driver has been notified. Tap “I'm On My Way” when you set off.")
     } catch {
       toast.error('Failed to accept job')
     }

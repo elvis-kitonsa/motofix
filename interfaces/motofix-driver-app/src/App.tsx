@@ -27,7 +27,6 @@ import RequestDetail from "./pages/RequestDetail";
 import LocatingUser from "./pages/LocatingUser";
 import DescribeIssue from "./pages/DescribeIssue";
 import FaultChat from "./pages/FaultChat";
-import GuidedDiagnosis from "./pages/GuidedDiagnosis";
 import NearbyMechanics from "./pages/NearbyMechanics";
 import SOSFaultPicker from "./pages/SOSFaultPicker";
 import EmergencyAlert from "./pages/EmergencyAlert";
@@ -52,7 +51,10 @@ function AppContent() {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
   useFcmToken(isAuthenticated);
-  useReminderScheduler(isAuthenticated);
+  // Never fire reminder pop-ups on public/auth screens (splash, welcome, login,
+  // signup, verifying, onboarding) — even if a stale token leaves isAuthenticated true.
+  const onPublicScreen = ['/', '/welcome', '/driver-entry', '/login', '/signup', '/verifying', '/onboarding'].includes(location.pathname);
+  useReminderScheduler(isAuthenticated && !onPublicScreen);
   const hideNavRoutes = ['/login', '/signup', '/welcome', '/driver-entry', '/', '/onboarding', '/verifying', '/reminders', '/reminder-settings', '/notifications', '/locating', '/describe-issue', '/fault-chat', '/diagnose', '/nearby-mechanics', '/emergency', '/insurance', '/terms-of-service', '/privacy-policy', '/rate-motofix', '/contact-support', '/spare-parts', '/parts-needed', '/parts-orders'];
   const showBottomNav = !hideNavRoutes.includes(location.pathname) && !location.pathname.startsWith('/requests/');
 
@@ -144,14 +146,6 @@ function AppContent() {
           element={
             <PrivateRoute>
               <FaultChat />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/diagnose"
-          element={
-            <PrivateRoute>
-              <GuidedDiagnosis />
             </PrivateRoute>
           }
         />

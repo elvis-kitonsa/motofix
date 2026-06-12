@@ -431,6 +431,8 @@ export interface ClaimCreate {
   description: string;
   injuries: boolean | null;
   third_party: boolean | null;
+  insurer_id?: string | null;
+  insurer_name?: string | null;
   photos: ClaimPhoto[];
 }
 export interface ClaimPhotoOut { id: number; slot: string; file_path: string; created_at: string; }
@@ -452,6 +454,40 @@ export interface ClaimRecord {
   photos: ClaimPhotoOut[];
 }
 
+// Insurer catalog + applications (apply for cover)
+export interface Insurer { id: string; name: string; short: string; tagline: string; }
+export interface CoverType { id: string; label: string; blurb: string; }
+export interface InsurerCatalog { insurers: Insurer[]; cover_types: CoverType[]; }
+export interface ApplicationCreate {
+  insurer_id: string;
+  insurer_name: string;
+  cover_type: string;
+  cover_label: string;
+  vehicle_reg: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_year?: string;
+  period?: string;
+  notes?: string;
+}
+export interface ApplicationRecord {
+  id: number;
+  reference: string;
+  user_id: number;
+  insurer_id: string;
+  insurer_name: string;
+  cover_type: string;
+  cover_label: string;
+  vehicle_reg: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_year: string;
+  period: string;
+  status: 'pending' | 'under_review' | 'active' | 'rejected' | 'expired' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
 export const insuranceService = {
   submit: (data: ClaimCreate) =>
     insuranceApi.post<ClaimRecord>('/claims', data),
@@ -461,6 +497,16 @@ export const insuranceService = {
 
   get: (reference: string) =>
     insuranceApi.get<ClaimRecord>(`/claims/${reference}`),
+
+  // Insurer catalog + applications
+  insurers: () =>
+    insuranceApi.get<InsurerCatalog>('/insurers'),
+
+  apply: (data: ApplicationCreate) =>
+    insuranceApi.post<ApplicationRecord>('/applications', data),
+
+  applications: () =>
+    insuranceApi.get<ApplicationRecord[]>('/applications'),
 };
 
 // Mechanic public profile (no auth required — safe public fields only)
