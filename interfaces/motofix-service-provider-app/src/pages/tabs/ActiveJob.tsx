@@ -33,13 +33,13 @@ const MAP_LIGHT_STYLES = [
 
 
 // Driver: blue map pin with person silhouette — anchor at bottom tip (22, 53)
+// NOTE: static SVG only — Google Maps loads marker icons as plain images, where
+// SMIL <animate> is disabled and (in Firefox) can make the whole icon fail to
+// rasterize → invisible pin. Keep this a static teardrop like MECHANIC_CAR_SVG.
 const DRIVER_PIN_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="56" viewBox="0 0 44 56">' +
-  '<circle cx="22" cy="20" fill="none" stroke="#3B82F6" stroke-width="2">' +
-  '<animate attributeName="r" from="12" to="22" dur="2s" repeatCount="indefinite"/>' +
-  '<animate attributeName="opacity" from="0.7" to="0" dur="2s" repeatCount="indefinite"/>' +
-  '</circle>' +
   '<ellipse cx="22" cy="55" rx="5" ry="1.5" fill="rgba(0,0,0,0.18)"/>' +
+  '<circle cx="22" cy="20" r="19" fill="none" stroke="#3B82F6" stroke-width="2" opacity="0.28"/>' +
   '<path d="M22 2C12.06 2 4 10.06 4 20C4 32 22 53 22 53C22 53 40 32 40 20C40 10.06 31.94 2 22 2Z" fill="#3B82F6" stroke="white" stroke-width="2.5"/>' +
   '<circle cx="22" cy="14" r="5" fill="white"/>' +
   '<path d="M12 30c0-5.52 4.48-10 10-10s10 4.48 10 10z" fill="white"/>' +
@@ -147,6 +147,22 @@ const GARAGE_PIN_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
     '<path d="M13 27 v-8 l9 -6 9 6 v8 z" fill="#fff"/>' +
     '<rect x="19" y="22" width="6" height="5" fill="#F59E0B"/></svg>'
 )}`
+
+// Treat a naive timestamp as UTC so it renders correctly in EAT.
+function normTs(ts: string): string {
+  return /[Z+]/.test(ts) ? ts : ts + 'Z'
+}
+
+// Condense the driver's request description for the mechanic: keep the core issue,
+// strip the verbose MOTOBOT photo-check parenthetical, and surface the AI verdict separately.
+function splitDescription(desc: string): { main: string; aiNote: string } {
+  const marker = 'MOTOBOT photo check:'
+  const idx = desc.indexOf(marker)
+  if (idx === -1) return { main: desc.trim(), aiNote: '' }
+  const main = desc.slice(0, idx).trim()
+  const aiNote = desc.slice(idx + marker.length).replace(/\s*\([^)]*\)\s*$/, '').trim() // drop the long parenthetical detail
+  return { main, aiNote }
+}
 
 // Pull the driver's chosen tow-to garage out of the request description.
 function parseGarageDest(desc?: string | null): { name: string; area: string; phone: string; lat?: number; lng?: number } | null {
@@ -353,6 +369,11 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     enRouteAt: (activeRequest as any)?.en_route_at ?? null,
   })
 
+  // The driver's pin = live GPS if they're broadcasting it, otherwise the request's
+  // location (a waiting driver usually isn't broadcasting, so without this the blue
+  // driver pin never appears and the map can't frame the destination).
+  const driverMarkerPos: LL | null = driverPos ?? reqDriver
+
   // Auto-advance to "arrived" once the simulated journey completes.
   useEffect(() => {
     if (enRoute && sim.ready && sim.progress >= 1 && !arrivedTriggeredRef.current) {
@@ -416,14 +437,14 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     const mechFrame: LL | null = sim.start ?? sim.mechPos ??
       (effectiveLat != null && effectiveLng != null ? { lat: effectiveLat, lng: effectiveLng } : null)
     let didFit = false
-    if (driverPos && mechFrame) {
+    if (driverMarkerPos && mechFrame) {
       const bounds = new (window as any).google.maps.LatLngBounds()
-      bounds.extend(driverPos)
+      bounds.extend(driverMarkerPos)
       bounds.extend(mechFrame)
       map.fitBounds(bounds, 60)
       didFit = true
-    } else if (driverPos) {
-      map.setCenter(driverPos)
+    } else if (driverMarkerPos) {
+      map.setCenter(driverMarkerPos)
       map.setZoom(16)
       didFit = true
     } else if (mechFrame) {
@@ -437,7 +458,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     if (!didFit) return
     if (isExp) initialFitDoneExpRef.current = true
     else       initialFitDoneRef.current    = true
-  }, [driverPos, effectiveLat, effectiveLng, sim.start, sim.mechPos, isLoaded])
+  }, [driverMarkerPos, effectiveLat, effectiveLng, sim.start, sim.mechPos, isLoaded])
 
   // Re-frame as soon as the positions become available (the one-time onMapLoad
   // fit can run before geolocation / the driver position has arrived).
@@ -467,9 +488,9 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   useEffect(() => {
     if (activeRequest?.status !== 'arrived') return
     const fit = (map: google.maps.Map | null) => {
-      if (!map || !isLoaded || !driverPos || effectiveLat == null || effectiveLng == null) return
+      if (!map || !isLoaded || !driverMarkerPos || effectiveLat == null || effectiveLng == null) return
       const b = new (window as any).google.maps.LatLngBounds()
-      b.extend(driverPos)
+      b.extend(driverMarkerPos)
       b.extend({ lat: effectiveLat, lng: effectiveLng })
       map.fitBounds(b, 80)
       // Both pins are close on arrival — cap the zoom so it isn't street-microscopic
@@ -478,7 +499,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     }
     fit(mapRef.current)
     fit(mapRefExp.current)
-  }, [activeRequest?.status, driverPos, effectiveLat, effectiveLng, isLoaded])
+  }, [activeRequest?.status, driverMarkerPos, effectiveLat, effectiveLng, isLoaded])
 
   // Only auto-fit when coords first become available (before user has interacted)
   useEffect(() => {
@@ -839,7 +860,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
           const simRemaining = enRoute ? sim.remaining : null
           const renderMapContent = (_ref: React.MutableRefObject<google.maps.Map | null>, onLoad: (m: google.maps.Map) => void) => (
             <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={KAMPALA_CENTER} zoom={13} options={mapOpts} onLoad={onLoad}>
-              {driverPos && <Marker position={driverPos} icon={driverIcon} title="Driver" />}
+              {driverMarkerPos && <Marker position={driverMarkerPos} icon={driverIcon} title="Driver" />}
               {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" />}
               {simRemaining && simRemaining.length >= 2 && (
                 <Polyline path={simRemaining} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
@@ -923,16 +944,34 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
               </div>
             </div>
 
-            {/* Description */}
-            {activeRequest.description && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                <Wrench style={{ width: 20, height: 20, color: C.amber, flexShrink: 0, marginTop: 1 }} />
-                <div>
-                  <p style={{ fontSize: 12, color: C.amber, fontWeight: 700, marginBottom: 2 }}>Description</p>
-                  <p style={{ fontSize: 14, color: C.textHi, whiteSpace: 'pre-wrap' }}>{activeRequest.description}</p>
+            {/* Description (summarised) + driver's photo + MOTOBOT verdict */}
+            {activeRequest.description && (() => {
+              const { main, aiNote } = splitDescription(activeRequest.description)
+              return (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                  <Wrench style={{ width: 20, height: 20, color: C.amber, flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, color: C.amber, fontWeight: 700, marginBottom: 2 }}>Description</p>
+                    {main && <p style={{ fontSize: 14, color: C.textHi, whiteSpace: 'pre-wrap' }}>{main}</p>}
+                    {driverPhotos.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginTop: 8 }}>
+                        {driverPhotos.map((u, i) => (
+                          <a key={i} href={u} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                            <img src={u} alt="Reported damage" style={{ height: 110, borderRadius: 10, border: `1px solid ${C.border}`, objectFit: 'cover', display: 'block' }} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {aiNote && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: `${C.amber}14`, border: `1px solid ${C.amber}33` }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: C.amber }}>🤖 MOTOBOT: </span>
+                        <span style={{ fontSize: 12.5, color: C.textHi }}>{aiNote}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Requested at */}
             {activeRequest.created_at && (
@@ -941,7 +980,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
                 <div>
                   <p style={{ fontSize: 12, color: C.amber, fontWeight: 700, marginBottom: 2 }}>Requested at</p>
                   <p style={{ fontSize: 14, color: C.textHi }}>
-                    {new Date(activeRequest.created_at).toLocaleString('en-UG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(normTs(activeRequest.created_at)).toLocaleString('en-UG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Kampala' })}
                   </p>
                 </div>
               </div>
@@ -1181,19 +1220,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             </div>
           )}
 
-          {/* Driver's photo of the problem (so the mechanic can judge before quoting) */}
-          {driverPhotos.length > 0 && (
-            <div style={{ marginBottom: 12, padding: 12, borderRadius: 14, background: C.surface1, border: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: C.textHi, marginBottom: 8 }}>📷 Photo from the driver</div>
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-                {driverPhotos.map((u, i) => (
-                  <a key={i} href={u} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
-                    <img src={u} alt="Reported damage" style={{ height: 120, borderRadius: 10, border: `1px solid ${C.border}`, objectFit: 'cover', display: 'block' }} />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* (Driver's photo now shown inside the Description card above.) */}
 
           {/* Tow-to destination — driver specified their own garage */}
           {garageDest && (
