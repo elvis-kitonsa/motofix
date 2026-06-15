@@ -17,7 +17,7 @@ import { serverNow } from '@/utils/serverClock'
 // The whole journey is compressed into SIM_MINUTES so a demo never drags on.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SIM_MINUTES = 4              // total journey length (≤ 5 min for demos)
+export const SIM_MINUTES = 5              // total journey length (~5 min solid for demos)
 const SIM_MS = SIM_MINUTES * 60 * 1000
 
 function hashSeed(s: string): number {
