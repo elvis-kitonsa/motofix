@@ -17,6 +17,7 @@ import {
   fetchTowingProviders, updateTowingProvider, deleteTowingProvider, TowingProvider,
   banProvider, unbanProvider, resetProviderCredentials, ResetCredsResult,
   createProvider, CreateProviderResult,
+  reinstateMechanic, fetchMechanicStrikes,
 } from '@/lib/api';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
