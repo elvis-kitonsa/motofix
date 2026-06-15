@@ -939,13 +939,15 @@ export default function RequestDetail() {
     }
   }, [simMech, request?.status, gpsLat, gpsLng, mapCoords?.lat, mapCoords?.lon]);
 
-  // ── Show "almost there" banner when ETA drops to ≤ 5 min ─────────────────
+  // ── Show "almost there" + "Do you see the mechanic?" card only once the pins
+  //    are close — ETA ≤ 2 min (i.e. the final stretch of the ~5 min journey).
+  //    Triggering earlier made the card pop up the moment the mechanic set off.
   useEffect(() => {
     if (request?.status !== 'en_route') return;
     if (!liveRoute?.duration) return;
     if (etaNearBannerRef.current) return;
     const mins = parseEtaMinutes(liveRoute.duration);
-    if (mins == null || mins > 5) return;
+    if (mins == null || mins > 2) return;
     etaNearBannerRef.current = true;
     setEtaNearBannerShown(true);
     toast(`${(request as any).mechanic_name?.split(' ')[0] ?? 'Mechanic'} is almost there — arriving in ~${mins} min!`, {
@@ -1265,7 +1267,7 @@ export default function RequestDetail() {
                     Almost there!
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--text-lo)', lineHeight: 1.4 }}>
-                    {(request as any).mechanic_name?.split(' ')[0] ?? 'Mechanic'} is less than 5 minutes away
+                    {(request as any).mechanic_name?.split(' ')[0] ?? 'Mechanic'} is almost here
                   </p>
                 </div>
               </div>
@@ -1513,24 +1515,30 @@ export default function RequestDetail() {
             <div>
               {/* Service Started auto-checks once reached — service begins automatically on arrival */}
               {STATUS_STEPS.map((step, i) => {
-                const serviceIdx = STATUS_ORDER.indexOf('service_started');
                 const isCompleted = request.status === 'completed';
-                const done   = isCompleted || i < currentStep || (i === serviceIdx && currentStep >= serviceIdx); // all ticked once completed, before current, or auto-started service
-                const active = i === currentStep && !done; // currently in progress (not the auto-checked / completed steps)
+                // A step's milestone is "reached" (ticked) as soon as the status
+                // arrives AT it — so the step matching the current status ticks
+                // immediately, in sync with the option just triggered, instead of
+                // lagging one step behind. The current step gets a distinct colored,
+                // pulsing check ("you are here") so it's never mistaken for pending.
+                const reached   = isCompleted || (currentStep >= 0 && i <= currentStep);
+                const isCurrent = !isCompleted && i === currentStep;
                 const isLast = i === STATUS_STEPS.length - 1;
                 const activeColor = STATUS_STEP_COLOR[request.status] ?? '#F59E0B';
                 return (
                   <div key={step.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                      {done ? (
-                        <CheckCircle2 style={{ width: 20, height: 20, flexShrink: 0, color: '#22C55E' }} />
-                      ) : active ? (
-                        <div style={{
-                          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                          border: `2.5px solid ${activeColor}`,
-                          background: activeColor + '20',
-                          animation: 'step-pulse 1.8s ease-in-out infinite',
-                        }} />
+                      {reached ? (
+                        <div style={{ position: 'relative', width: 20, height: 20, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isCurrent && (
+                            <span style={{
+                              position: 'absolute', inset: -4, borderRadius: '50%',
+                              border: `2px solid ${activeColor}`,
+                              animation: 'step-pulse 1.8s ease-in-out infinite',
+                            }} />
+                          )}
+                          <CheckCircle2 style={{ width: 20, height: 20, flexShrink: 0, color: isCurrent ? activeColor : '#22C55E' }} />
+                        </div>
                       ) : (
                         <Circle style={{ width: 20, height: 20, flexShrink: 0, color: 'rgba(255,255,255,0.18)' }} />
                       )}
@@ -1538,20 +1546,22 @@ export default function RequestDetail() {
                         <div style={{
                           width: 2, flex: 1, minHeight: 24,
                           margin: '4px 0', borderRadius: 1,
-                          background: done ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.10)',
+                          // Green only between two reached steps; the segment leaving
+                          // the current step stays dim until the next milestone hits.
+                          background: (isCompleted || i < currentStep) ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.10)',
                         }} />
                       )}
                     </div>
                     <div style={{ paddingBottom: isLast ? 0 : 16 }}>
                       <p style={{
                         fontSize: 13,
-                        fontWeight: active ? 700 : done ? 600 : 500,
+                        fontWeight: isCurrent ? 800 : reached ? 600 : 500,
                         lineHeight: 1.3,
-                        color: (done || active) ? 'var(--text-hi, rgba(255,255,255,0.88))' : 'var(--text-faint, rgba(255,255,255,0.35))',
+                        color: isCurrent ? activeColor : reached ? 'var(--text-hi, rgba(255,255,255,0.88))' : 'var(--text-faint, rgba(255,255,255,0.35))',
                       }}>
                         {step.label}
                       </p>
-                      {(active || (i === serviceIdx && currentStep === serviceIdx)) && (
+                      {isCurrent && (
                         <p style={{ fontSize: 12, color: 'var(--text-faint, rgba(255,255,255,0.45))', marginTop: 3, lineHeight: 1.5 }}>
                           {step.desc}
                         </p>

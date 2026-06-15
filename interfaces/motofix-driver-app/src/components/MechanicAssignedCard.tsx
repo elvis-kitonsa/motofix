@@ -1,8 +1,12 @@
 import { useState } from 'react'
-import { X, MessageCircle, Phone, User, Star, Wrench, Briefcase } from 'lucide-react'
+import { X, MessageCircle, Phone, Star, Wrench, Briefcase, Store, BadgeCheck, ChevronDown } from 'lucide-react'
 import type { MechanicPublicProfile } from '@/config/api'
 
 const AUTH_BASE_URL = import.meta.env.VITE_API_AUTH_URL ?? ''
+
+// How many stock pictures live in /public/avatars (mechanic-1.jpg … mechanic-N.jpg).
+// Used only when a mechanic has no uploaded profile_photo_url. See that folder's README.
+const DEFAULT_AVATAR_COUNT = 6
 
 interface Props {
   profile: MechanicPublicProfile
@@ -14,21 +18,40 @@ interface Props {
   unreadCount?: number
 }
 
+// Build the ordered list of image URLs to try for this mechanic, best first:
+//   1) their real uploaded photo  2) a stable stock photo picked by id
+//   3) the bundled default.svg. If every one fails to load we fall back to initials.
+function buildPhotoCandidates(profile: MechanicPublicProfile): string[] {
+  const out: string[] = []
+  if (profile.profile_photo_url) {
+    out.push(
+      profile.profile_photo_url.startsWith('http')
+        ? profile.profile_photo_url
+        : `${AUTH_BASE_URL}/${profile.profile_photo_url.replace(/^\//, '')}`,
+    )
+  }
+  // Deterministic pick so the same mechanic always gets the same stock face.
+  const seed = Number.isFinite(profile.id) ? profile.id : 0
+  const idx = (Math.abs(seed) % DEFAULT_AVATAR_COUNT) + 1
+  out.push(`/avatars/mechanic-${idx}.jpg`)
+  out.push('/avatars/default.svg')
+  return out
+}
+
 export default function MechanicAssignedCard({
   profile, mechanicPhone, onDismiss, onCall, onMessage, unreadCount = 0,
 }: Props) {
   const [viewExpanded, setViewExpanded] = useState(false)
+  // Walk the candidate photos on load error; once we run past the end, show initials.
+  const candidates = buildPhotoCandidates(profile)
+  const [photoIdx, setPhotoIdx] = useState(0)
+  const photoSrc = photoIdx < candidates.length ? candidates[photoIdx] : null
 
   const initials = profile.full_name
     .split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 
-  const photoUrl = profile.profile_photo_url
-    ? (profile.profile_photo_url.startsWith('http')
-        ? profile.profile_photo_url
-        : `${AUTH_BASE_URL}/${profile.profile_photo_url.replace(/^\//, '')}`)
-    : null
-
-  const garageName = profile.garage_name ?? 'Independent Mechanic'
+  const garageName  = profile.garage_name ?? 'Independent Mechanic'
+  const hasGarage   = !!profile.garage_name
   const specialty   = profile.specialty ?? profile.provider_type ?? 'General Mechanic'
   const rating      = profile.rating ?? 0
   const totalRatings = profile.total_ratings ?? 0
@@ -37,18 +60,10 @@ export default function MechanicAssignedCard({
   return (
     <>
       <style>{`
-        @keyframes mac-slide-up {
-          from { transform: translateY(100%); opacity: 0; }
-          to   { transform: translateY(0);    opacity: 1; }
-        }
-        @keyframes mac-fade-in {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes mac-detail-in {
-          from { opacity: 0; transform: translateY(-6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes mac-slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes mac-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes mac-detail-in{ from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        .mac-action:active { filter: brightness(1.12); transform: translateY(1px); }
       `}</style>
 
       {/* Backdrop */}
@@ -56,9 +71,8 @@ export default function MechanicAssignedCard({
         onClick={onDismiss}
         style={{
           position: 'fixed', inset: 0, zIndex: 1100,
-          background: 'rgba(0,0,0,0.65)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
+          background: 'rgba(0,0,0,0.66)',
+          backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
           animation: 'mac-fade-in 0.22s ease',
         }}
       />
@@ -67,28 +81,27 @@ export default function MechanicAssignedCard({
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1101,
         maxWidth: 480, margin: '0 auto',
-        borderRadius: '24px 24px 0 0',
+        borderRadius: '26px 26px 0 0',
         background: 'var(--surface-1)',
-        boxShadow: '0 -12px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(245,158,11,0.10)',
+        boxShadow: '0 -12px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)',
         overflow: 'hidden',
         animation: 'mac-slide-up 0.36s cubic-bezier(0.34,1.56,0.64,1)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)',
       }}>
 
-        {/* Green shimmer line */}
+        {/* Thin green "assigned" accent line */}
         <div style={{ height: 3, background: 'linear-gradient(90deg, transparent, #22C55E, transparent)' }} />
 
         {/* Drag handle + close */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 20px 0', position: 'relative' }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-3)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '13px 20px 0', position: 'relative' }}>
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border-3)' }} />
           <button
             onClick={onDismiss}
+            aria-label="Dismiss"
             style={{
-              position: 'absolute', right: 16,
-              width: 32, height: 32, borderRadius: '50%',
+              position: 'absolute', right: 16, width: 32, height: 32, borderRadius: '50%',
               background: 'var(--surface-3)', border: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}
           >
             <X style={{ width: 15, height: 15, color: 'var(--text-faint)' }} />
@@ -96,7 +109,7 @@ export default function MechanicAssignedCard({
         </div>
 
         {/* "Assigned" badge */}
-        <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0 14px' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
@@ -109,113 +122,160 @@ export default function MechanicAssignedCard({
           </div>
         </div>
 
-        {/* Profile section */}
-        <div style={{ padding: '0 20px 4px' }}>
-          {/* Photo + name row */}
+        <div style={{ padding: '0 20px 6px' }}>
+          {/* Hero: avatar + name + rating */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14 }}>
-            {/* Avatar */}
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              {photoUrl ? (
+              {photoSrc ? (
                 <img
-                  src={photoUrl}
+                  src={photoSrc}
                   alt={profile.full_name}
-                  style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '2.5px solid rgba(245,158,11,0.45)' }}
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  onError={() => setPhotoIdx(i => i + 1)}
+                  style={{
+                    width: 84, height: 84, borderRadius: '50%', objectFit: 'cover',
+                    border: '2.5px solid rgba(245,158,11,0.5)',
+                    boxShadow: '0 6px 22px rgba(0,0,0,0.35)',
+                  }}
                 />
               ) : (
                 <div style={{
-                  width: 72, height: 72, borderRadius: '50%',
+                  width: 84, height: 84, borderRadius: '50%',
                   background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 24, fontWeight: 900, color: '#000',
-                  border: '2.5px solid rgba(245,158,11,0.45)',
-                  boxShadow: '0 4px 20px rgba(245,158,11,0.3)',
+                  fontSize: 28, fontWeight: 900, color: '#000',
+                  border: '2.5px solid rgba(245,158,11,0.5)',
+                  boxShadow: '0 6px 22px rgba(245,158,11,0.3)',
                 }}>
                   {initials}
                 </div>
               )}
               {/* Online dot */}
               <div style={{
-                position: 'absolute', bottom: 3, right: 3,
-                width: 14, height: 14, borderRadius: '50%',
-                background: '#22C55E', border: '2px solid var(--surface-1)',
+                position: 'absolute', bottom: 4, right: 4,
+                width: 16, height: 16, borderRadius: '50%',
+                background: '#22C55E', border: '3px solid var(--surface-1)',
               }} />
             </div>
 
-            {/* Name + garage + rating */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-hi)', lineHeight: 1.2, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {profile.full_name}
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {garageName}
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <p style={{ fontSize: 21, fontWeight: 900, color: 'var(--text-hi)', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                  {profile.full_name}
+                </p>
+                <BadgeCheck style={{ width: 17, height: 17, color: '#3B82F6', flexShrink: 0 }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <Star style={{ width: 12, height: 12, fill: '#F59E0B', color: '#F59E0B' }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-hi)' }}>
+                  <Star style={{ width: 13, height: 13, fill: '#F59E0B', color: '#F59E0B' }} />
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-hi)' }}>
                     {rating > 0 ? rating.toFixed(1) : 'New'}
                   </span>
                   {totalRatings > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>({totalRatings})</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>({totalRatings})</span>
                   )}
                 </div>
                 <span style={{ color: 'var(--border-3)', fontSize: 10 }}>•</span>
-                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{jobsDone} jobs</span>
+                <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{jobsDone} jobs done</span>
               </div>
             </div>
           </div>
 
-          {/* Specialty tag */}
-          <div style={{ marginBottom: 16 }}>
+          {/* Garage / business — prominent banner */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: hasGarage
+              ? 'linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.05))'
+              : 'var(--surface-2)',
+            border: `1px solid ${hasGarage ? 'rgba(245,158,11,0.30)' : 'var(--border-2)'}`,
+            borderRadius: 14, padding: '12px 14px', marginBottom: 12,
+          }}>
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)',
-              borderRadius: 20, padding: '4px 12px',
+              width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+              background: hasGarage ? 'rgba(245,158,11,0.18)' : 'var(--surface-3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Wrench style={{ width: 11, height: 11, color: '#F59E0B' }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#F59E0B' }}>{specialty}</span>
+              <Store style={{ width: 19, height: 19, color: hasGarage ? '#F59E0B' : 'var(--text-faint)' }} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>
+                {hasGarage ? 'Works at' : 'Provider'}
+              </p>
+              <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                {garageName}
+              </p>
+            </div>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+              background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.22)',
+              borderRadius: 16, padding: '4px 10px',
+            }}>
+              <Wrench style={{ width: 10, height: 10, color: '#F59E0B' }} />
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#F59E0B', maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{specialty}</span>
             </div>
           </div>
 
           {/* Action buttons */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: viewExpanded ? 14 : 4 }}>
-            <ActionBtn
-              icon={<MessageCircle style={{ width: 18, height: 18, color: '#3B82F6' }} />}
-              label="Message"
-              color="#3B82F6"
-              border="rgba(59,130,246,0.35)"
-              bg="rgba(59,130,246,0.10)"
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <button
+              className="mac-action"
               onClick={onMessage}
-              badge={unreadCount}
-            />
-            <ActionBtn
-              icon={<Phone style={{ width: 18, height: 18, color: '#F59E0B' }} />}
-              label="Call"
-              color="#F59E0B"
-              border="rgba(245,158,11,0.35)"
-              bg="rgba(245,158,11,0.10)"
+              style={{
+                position: 'relative', height: 54, borderRadius: 15, border: 'none',
+                background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
+                color: '#fff', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                boxShadow: '0 4px 16px rgba(59,130,246,0.32)',
+              }}
+            >
+              <MessageCircle style={{ width: 19, height: 19 }} />
+              <span style={{ fontSize: 14.5, fontWeight: 800 }}>Message</span>
+              {unreadCount > 0 && (
+                <div style={{
+                  position: 'absolute', top: 7, right: 10,
+                  minWidth: 19, height: 19, padding: '0 5px', borderRadius: 10,
+                  background: '#EF4444', color: '#fff', fontSize: 10.5, fontWeight: 900,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '2px solid #2563EB',
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </div>
+              )}
+            </button>
+            <button
+              className="mac-action"
               onClick={onCall}
-            />
-            <ActionBtn
-              icon={<User style={{ width: 18, height: 18, color: '#8B5CF6' }} />}
-              label="View"
-              color="#8B5CF6"
-              border={`rgba(139,92,246,${viewExpanded ? '0.6' : '0.35'})`}
-              bg={`rgba(139,92,246,${viewExpanded ? '0.18' : '0.10'})`}
-              onClick={() => setViewExpanded(v => !v)}
-            />
+              style={{
+                height: 54, borderRadius: 15,
+                border: '1.5px solid rgba(245,158,11,0.45)',
+                background: 'rgba(245,158,11,0.12)', color: '#F59E0B', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+              }}
+            >
+              <Phone style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 14.5, fontWeight: 800 }}>Call</span>
+            </button>
           </div>
+
+          {/* View full profile toggle */}
+          <button
+            onClick={() => setViewExpanded(v => !v)}
+            style={{
+              width: '100%', height: 42, borderRadius: 12,
+              border: '1px solid var(--border-2)', background: 'var(--surface-2)',
+              color: 'var(--text-md)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginBottom: viewExpanded ? 12 : 2,
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{viewExpanded ? 'Hide profile' : 'View full profile'}</span>
+            <ChevronDown style={{ width: 15, height: 15, transition: 'transform 0.2s ease', transform: viewExpanded ? 'rotate(180deg)' : 'none' }} />
+          </button>
 
           {/* Expanded profile details */}
           {viewExpanded && (
             <div style={{
-              borderRadius: 14,
-              background: 'var(--surface-2)',
-              border: '1px solid var(--border-2)',
-              padding: '14px 16px',
-              marginBottom: 4,
-              animation: 'mac-detail-in 0.22s ease',
+              borderRadius: 14, background: 'var(--surface-2)', border: '1px solid var(--border-2)',
+              padding: '14px 16px', marginBottom: 4, animation: 'mac-detail-in 0.22s ease',
             }}>
               <p style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12 }}>
                 Provider Details
@@ -228,11 +288,7 @@ export default function MechanicAssignedCard({
                   label="Rating"
                   value={rating > 0 ? `${rating.toFixed(1)} / 5 (${totalRatings} reviews)` : 'No ratings yet'}
                 />
-                <DetailRow
-                  icon={<Briefcase style={{ width: 13, height: 13, color: '#F59E0B' }} />}
-                  label="Jobs Completed"
-                  value={`${jobsDone} completed jobs`}
-                />
+                <DetailRow icon={<Briefcase style={{ width: 13, height: 13, color: '#F59E0B' }} />} label="Jobs Completed" value={`${jobsDone} completed jobs`} />
                 {mechanicPhone && (
                   <DetailRow icon={<Phone style={{ width: 13, height: 13, color: '#F59E0B' }} />} label="Phone" value={mechanicPhone} />
                 )}
@@ -242,47 +298,6 @@ export default function MechanicAssignedCard({
         </div>
       </div>
     </>
-  )
-}
-
-function ActionBtn({
-  icon, label, color, border, bg, onClick, badge = 0,
-}: {
-  icon: React.ReactNode
-  label: string
-  color: string
-  border: string
-  bg: string
-  onClick: () => void
-  badge?: number
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        position: 'relative',
-        height: 52, borderRadius: 14,
-        border: `1.5px solid ${border}`,
-        background: bg,
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 4,
-        cursor: 'pointer',
-        transition: 'filter 0.15s ease',
-      }}
-    >
-      {icon}
-      <span style={{ fontSize: 11, fontWeight: 700, color }}>{label}</span>
-      {badge > 0 && (
-        <div style={{
-          position: 'absolute', top: 6, right: 8,
-          minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
-          background: '#EF4444', color: '#fff', fontSize: 10, fontWeight: 900,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {badge > 9 ? '9+' : badge}
-        </div>
-      )}
-    </button>
   )
 }
 
