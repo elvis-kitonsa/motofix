@@ -15,7 +15,36 @@ payments, spare-parts sourcing, and insurance, all on one platform.
 
 ## Screenshots
 
-_Coming soon — driver app, mechanic app, and admin portal._
+### 🚗 Driver app
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/driver/signup.png" width="220"><br><sub>Sign up</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/home-dashboard.png" width="220"><br><sub>Home dashboard</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/live-tracking.png" width="220"><br><sub>Live tracking</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/driver/motobot-diagnostics.png" width="220"><br><sub>MOTOBOT AI diagnostics</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/spare-parts-ordering.png" width="220"><br><sub>Spare-parts ordering</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/rating-review.png" width="220"><br><sub>Rating &amp; review</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/driver/notifications.png" width="220"><br><sub>In-app notifications</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/notification-popups.png" width="220"><br><sub>Notification pop-ups</sub></td>
+    <td align="center"><img src="docs/screenshots/driver/contact-support.png" width="220"><br><sub>Contact support</sub></td>
+  </tr>
+</table>
+
+### 🔧 Mechanic / provider app
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/mechanic/dashboard.png" width="220"><br><sub>Dashboard</sub></td>
+    <td align="center"><img src="docs/screenshots/mechanic/jobs-view.png" width="220"><br><sub>Jobs view</sub></td>
+    <td align="center"><img src="docs/screenshots/mechanic/ai-chatbot.png" width="220"><br><sub>AI chatbot</sub></td>
+    <td align="center"><img src="docs/screenshots/mechanic/notifications.png" width="220"><br><sub>Notifications</sub></td>
+  </tr>
+</table>
 
 ---
 
