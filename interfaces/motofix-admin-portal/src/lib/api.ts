@@ -435,6 +435,45 @@ export const unbanProvider = async (id: string, providerType: 'mechanic' | 'towi
   await authClient.post(`/auth/admin/unban-provider/${id}`, { provider_type: providerType, reason: '' });
 };
 
+// ── Cancellation suspension + platform fees (dispatch service) ─────────────────
+export interface MechanicStrikeState {
+  mechanic_id: number;
+  strikes: number;
+  suspended: boolean;
+  suspended_at: string | null;
+  suspension_count: number;
+  limit: number;
+}
+
+// Lift a cancellation suspension after the mechanic has contacted support. Strikes
+// reset but suspension_count is preserved so repeat offences can be escalated.
+export const reinstateMechanic = async (mechanicId: string | number): Promise<{ suspension_count: number }> => {
+  const resp = await requestsClient.post(`/mechanics/${mechanicId}/reinstate`);
+  return resp.data;
+};
+
+export const fetchMechanicStrikes = async (mechanicId: string | number): Promise<MechanicStrikeState> => {
+  const resp = await requestsClient.get(`/mechanics/${mechanicId}/strikes`);
+  return resp.data;
+};
+
+export interface PlatformFeeState {
+  mechanic_id: number;
+  owed_count: number;
+  owed_amount: number;
+  fee_per_job: number;
+  gate_jobs: number;
+  gated: boolean;
+  locked: boolean;
+  jobs: { request_id: number; amount: number; created_at: string | null }[];
+}
+
+// A mechanic's outstanding platform-fee balance (MOTOFIX revenue).
+export const fetchMechanicFees = async (mechanicId: string | number): Promise<PlatformFeeState> => {
+  const resp = await requestsClient.get(`/fees/${mechanicId}`);
+  return resp.data;
+};
+
 export interface ResetCredsResult {
   spn: string;
   temp_password: string;

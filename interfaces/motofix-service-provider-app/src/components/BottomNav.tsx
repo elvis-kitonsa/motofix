@@ -1,4 +1,4 @@
-import { LayoutDashboard, ClipboardList, Crown, User } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Wallet, User } from 'lucide-react'
 
 type Tab = 'home' | 'jobs' | 'earnings' | 'profile'
 
@@ -12,7 +12,7 @@ interface Props {
 const TABS: { id: Tab; icon: React.ElementType; label: string }[] = [
   { id: 'home',     icon: LayoutDashboard, label: 'Home'     },
   { id: 'jobs',     icon: ClipboardList,   label: 'Jobs'     },
-  { id: 'earnings', icon: Crown,           label: 'Subscription' },
+  { id: 'earnings', icon: Wallet,          label: 'Fees' },
   { id: 'profile',  icon: User,            label: 'Profile'  },
 ]
 

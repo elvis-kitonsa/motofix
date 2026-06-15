@@ -102,7 +102,31 @@ async def run_migrations(db_pool: asyncpg.Pool):
                     updated_at TIMESTAMP DEFAULT NOW()
                 );
             """)
+            # How many times this mechanic has been suspended — preserved across
+            # reinstatements so repeat offenders can be escalated.
+            await conn.execute("ALTER TABLE mechanic_strikes ADD COLUMN IF NOT EXISTS suspension_count INTEGER NOT NULL DEFAULT 0")
             logger.info("✅ cancellation columns + mechanic_strikes table ensured")
+
+            # Platform fee ledger — MOTOFIX's revenue. Each COMPLETED job a mechanic
+            # earns through the platform accrues a flat UGX 10,000 fee they owe the
+            # platform (this replaces the old monthly subscription). One row per job
+            # (request_id UNIQUE → idempotent). The mechanic settles the balance; at a
+            # cap of unpaid jobs they're gated from accepting new work, and after a
+            # grace window an unsettled balance hard-locks the account.
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS platform_fees (
+                    id SERIAL PRIMARY KEY,
+                    request_id INTEGER UNIQUE NOT NULL,
+                    mechanic_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL DEFAULT 10000,
+                    status VARCHAR(10) NOT NULL DEFAULT 'owed',
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    paid_at TIMESTAMP NULL,
+                    payment_ref VARCHAR NULL
+                );
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_platform_fees_mech ON platform_fees (mechanic_id, status)")
+            logger.info("✅ platform_fees ledger ensured")
 
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS job_acceptances (
@@ -1453,6 +1477,18 @@ async def accept_request(
                 detail="Your account is suspended for repeatedly cancelling jobs. Contact MOTOFIX support.",
             )
 
+        # Platform-fee gate: too many unpaid completed-job fees blocks new acceptances
+        # until the mechanic settles their balance (this replaces the subscription gate).
+        fee_state = await _fee_state(db, mechanic_id)
+        if fee_state["gated"]:
+            raise HTTPException(
+                status_code=402,  # Payment Required
+                detail=(
+                    f"You have {fee_state['owed_count']} unpaid platform fees "
+                    f"(UGX {fee_state['owed_amount']:,}). Settle them to accept new jobs."
+                ),
+            )
+
         async with db.transaction():
             # Try to change the status atomically only if it's still pending
             result = await db.fetchrow(
@@ -1680,10 +1716,13 @@ STRIKE_LIMIT = 3  # consecutive pick-up cancellations before suspension
 
 async def _get_strike_row(db, mechanic_id: int) -> dict:
     row = await db.fetchrow(
-        "SELECT mechanic_id, strikes, suspended FROM mechanic_strikes WHERE mechanic_id = $1",
+        "SELECT mechanic_id, strikes, suspended, suspended_at, suspension_count FROM mechanic_strikes WHERE mechanic_id = $1",
         mechanic_id,
     )
-    return dict(row) if row else {"mechanic_id": mechanic_id, "strikes": 0, "suspended": False}
+    return dict(row) if row else {
+        "mechanic_id": mechanic_id, "strikes": 0, "suspended": False,
+        "suspended_at": None, "suspension_count": 0,
+    }
 
 async def _add_mechanic_strike(db, mechanic_id: int) -> dict:
     """Record one consecutive cancellation; suspend on the 3rd. Returns the new state."""
@@ -1700,11 +1739,19 @@ async def _add_mechanic_strike(db, mechanic_id: int) -> dict:
     strikes = int(row["strikes"])
     suspended = strikes >= STRIKE_LIMIT
     if suspended:
-        await db.execute(
-            "UPDATE mechanic_strikes SET suspended = TRUE, suspended_at = NOW() WHERE mechanic_id = $1",
+        # Suspend AND bump the lifetime suspension count (drives escalation messaging).
+        row2 = await db.fetchrow(
+            """
+            UPDATE mechanic_strikes
+               SET suspended = TRUE, suspended_at = NOW(), suspension_count = suspension_count + 1
+             WHERE mechanic_id = $1
+            RETURNING suspension_count
+            """,
             mechanic_id,
         )
-    return {"strikes": strikes, "suspended": suspended}
+        return {"strikes": strikes, "suspended": True,
+                "suspension_count": int(row2["suspension_count"]) if row2 else 1}
+    return {"strikes": strikes, "suspended": False, "suspension_count": 0}
 
 async def _reset_mechanic_strikes(db, mechanic_id: int) -> None:
     """A completed job is good conduct — clear the consecutive-cancel streak."""
@@ -1718,11 +1765,157 @@ async def _reset_mechanic_strikes(db, mechanic_id: int) -> None:
         mechanic_id,
     )
 
+# ─── Platform fee ledger — MOTOFIX revenue (replaces the monthly subscription) ──
+PLATFORM_FEE      = 10000  # flat UGX owed per completed job earned through the platform
+FEE_GATE_JOBS     = 5      # unpaid completed jobs before new-job acceptance is blocked
+FEE_DEFAULT_HOURS = 48     # hours an over-cap balance may sit before the account hard-locks
+
+async def _accrue_platform_fee(db, mechanic_id: int, request_id: int) -> None:
+    """A completed job → the mechanic owes a flat platform fee. request_id is UNIQUE
+    so re-running the completion path never double-charges the same job."""
+    await db.execute(
+        """
+        INSERT INTO platform_fees (request_id, mechanic_id, amount, status)
+        VALUES ($1, $2, $3, 'owed')
+        ON CONFLICT (request_id) DO NOTHING
+        """,
+        request_id, mechanic_id, PLATFORM_FEE,
+    )
+
+async def _fee_state(db, mechanic_id: int) -> dict:
+    """Outstanding-fee snapshot used by the accept gate, the mechanic balance screen,
+    and the hard-lock check. `gated` blocks accepting new jobs; `locked` is a full
+    account lock once an over-cap balance has sat past the grace window."""
+    rows = await db.fetch(
+        """
+        SELECT request_id, amount, created_at FROM platform_fees
+        WHERE mechanic_id = $1 AND status = 'owed' ORDER BY created_at ASC
+        """,
+        mechanic_id,
+    )
+    jobs = [
+        {"request_id": r["request_id"], "amount": int(r["amount"]),
+         "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+        for r in rows
+    ]
+    owed_count = len(jobs)
+    gated = owed_count >= FEE_GATE_JOBS
+    locked = False
+    if gated and rows and rows[0]["created_at"] is not None:
+        age_h = (datetime.utcnow() - rows[0]["created_at"].replace(tzinfo=None)).total_seconds() / 3600
+        locked = age_h >= FEE_DEFAULT_HOURS
+    return {
+        "mechanic_id": mechanic_id,
+        "owed_count": owed_count,
+        "owed_amount": sum(j["amount"] for j in jobs),
+        "fee_per_job": PLATFORM_FEE,
+        "gate_jobs": FEE_GATE_JOBS,
+        "gated": gated,
+        "locked": locked,
+        "jobs": jobs,
+    }
+
+def _parse_momo_amount(text: Optional[str]) -> Optional[int]:
+    """AI/NLP payment detection — extract the shilling amount from a free-form Mobile
+    Money confirmation message so a received payment can be matched to a mechanic's
+    balance. In production this is complemented by the MoMo gateway webhook; here it
+    reads the confirmation text the way our AI verification layer would. Returns the
+    largest UGX-looking figure found (handles 'UGX 50,000', 'received 50000', etc.)."""
+    if not text:
+        return None
+    import re
+    vals = []
+    for n in re.findall(r'([\d][\d,]{2,})', text):
+        try:
+            vals.append(int(n.replace(",", "")))
+        except ValueError:
+            pass
+    return max(vals) if vals else None
+
+async def _settle_fees(db, mechanic_id: int, amount: int, ref: Optional[str]) -> int:
+    """Apply a received payment to the oldest owed fees first. Returns jobs cleared."""
+    rows = await db.fetch(
+        "SELECT id, amount FROM platform_fees WHERE mechanic_id=$1 AND status='owed' ORDER BY created_at ASC",
+        mechanic_id,
+    )
+    cleared, remaining = [], amount
+    for r in rows:
+        if remaining >= int(r["amount"]):
+            cleared.append(r["id"]); remaining -= int(r["amount"])
+        else:
+            break
+    if cleared:
+        await db.execute(
+            "UPDATE platform_fees SET status='paid', paid_at=NOW(), payment_ref=$2 WHERE id = ANY($1::int[])",
+            cleared, ref,
+        )
+    return len(cleared)
+
+class FeePaymentPayload(BaseModel):
+    sms_text: Optional[str] = None   # simulated/real MoMo confirmation message (AI-parsed)
+    amount: Optional[int] = None     # or an explicit amount (fallback for the demo)
+    reference: Optional[str] = None
+
+@app.get("/fees/{mechanic_id}", tags=["Platform Fees"])
+async def get_platform_fees(mechanic_id: int, db=Depends(get_db)):
+    """Current owed platform-fee balance + the jobs it covers + gate/lock state."""
+    return await _fee_state(db, mechanic_id)
+
+@app.post("/fees/{mechanic_id}/pay", tags=["Platform Fees"])
+async def pay_platform_fees(mechanic_id: int, body: FeePaymentPayload, db=Depends(get_db)):
+    """Settle owed platform fees. The amount is taken from `amount`, or AI-detected from
+    a Mobile Money confirmation `sms_text`. On success the balance is cleared, the
+    account is un-gated, and the admin dashboard is notified in real time."""
+    amount = body.amount if body.amount is not None else _parse_momo_amount(body.sms_text)
+    if not amount or amount <= 0:
+        raise HTTPException(status_code=400, detail="Could not detect a payment amount.")
+    cleared = await _settle_fees(db, mechanic_id, int(amount), body.reference)
+    state = await _fee_state(db, mechanic_id)
+    # Notify admins in real time that a platform-fee payment landed.
+    try:
+        await manager.broadcast({
+            "type": "platform_fee_paid",
+            "mechanic_id": mechanic_id,
+            "amount": int(amount),
+            "cleared_jobs": cleared,
+            "owed_remaining": state["owed_amount"],
+            "detected_by": "ai_sms" if body.amount is None else "manual",
+            "at": datetime.utcnow().isoformat() + "Z",
+        })
+    except Exception as e:
+        logger.warning("fee-paid broadcast failed: %s", e)
+    return {"detail": "Payment applied", "cleared_jobs": cleared, "amount": int(amount), "state": state}
+
 @app.get("/mechanics/{mechanic_id}/strikes", tags=["Cancellation"])
 async def get_mechanic_strikes(mechanic_id: int, db=Depends(get_db)):
     """Current consecutive-cancellation strike count + suspension state for a mechanic."""
     s = await _get_strike_row(db, mechanic_id)
-    return {"mechanic_id": mechanic_id, "strikes": int(s["strikes"]), "suspended": bool(s["suspended"]), "limit": STRIKE_LIMIT}
+    sa = s.get("suspended_at")
+    return {
+        "mechanic_id": mechanic_id,
+        "strikes": int(s["strikes"]),
+        "suspended": bool(s["suspended"]),
+        "suspended_at": sa.isoformat() if hasattr(sa, "isoformat") else sa,
+        "suspension_count": int(s.get("suspension_count") or 0),
+        "limit": STRIKE_LIMIT,
+    }
+
+@app.post("/mechanics/{mechanic_id}/reinstate", tags=["Cancellation"])
+async def reinstate_mechanic(mechanic_id: int, db=Depends(get_db)):
+    """Admin lifts a cancellation suspension after the mechanic has contacted support and
+    explained themselves. Strikes reset to 0, but `suspension_count` is preserved so a
+    repeat offence is treated as an escalation."""
+    await db.execute(
+        """
+        UPDATE mechanic_strikes
+           SET suspended = FALSE, suspended_at = NULL, strikes = 0, updated_at = NOW()
+         WHERE mechanic_id = $1
+        """,
+        mechanic_id,
+    )
+    s = await _get_strike_row(db, mechanic_id)
+    return {"detail": "Mechanic reinstated", "mechanic_id": mechanic_id,
+            "suspension_count": int(s.get("suspension_count") or 0)}
 
 
 @app.patch("/requests/{request_id}/status")
@@ -1844,8 +2037,12 @@ async def update_status(
         if role == "mechanic" and row.get("mechanic_id") is not None:
             res = await _add_mechanic_strike(db, int(row["mechanic_id"]))
             cancel_outcome = {**res, "limit": STRIKE_LIMIT}
-    elif status == "completed" and role == "mechanic" and row.get("mechanic_id") is not None:
+    elif status == "completed" and row.get("mechanic_id") is not None:
+        # Completing a job is good conduct → clear the consecutive-cancel streak…
         await _reset_mechanic_strikes(db, int(row["mechanic_id"]))
+        # …and it's a job earned through the platform → accrue the flat platform fee
+        # the mechanic owes MOTOFIX (idempotent on request_id).
+        await _accrue_platform_fee(db, int(row["mechanic_id"]), request_id)
 
     new_status = status
     phone = row["phone"]

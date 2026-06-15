@@ -335,6 +335,28 @@ export const subscriptionService = {
     subscriptionsApi.get<SubscriptionState>('/subscriptions/me'),
 }
 
+// ── Platform fees (MOTOFIX revenue — replaces the subscription) ────────────────
+// A flat UGX 10,000 is owed per completed job. The mechanic settles their balance;
+// 5 unpaid jobs gates new acceptances, an overdue balance hard-locks the account.
+export interface PlatformFeeState {
+  mechanic_id: number
+  owed_count: number
+  owed_amount: number
+  fee_per_job: number
+  gate_jobs: number
+  gated: boolean
+  locked: boolean
+  jobs: { request_id: number; amount: number; created_at: string | null }[]
+}
+
+export const feesService = {
+  getFees: (mechanicId: string | number) =>
+    requestsApi.get<PlatformFeeState>(`/fees/${mechanicId}`),
+  // Settle owed fees. Pass an AI-parsed `sms_text` (MoMo confirmation) or an `amount`.
+  pay: (mechanicId: string | number, body: { sms_text?: string; amount?: number; reference?: string }) =>
+    requestsApi.post(`/fees/${mechanicId}/pay`, body),
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 const NOTIF_READ_KEY    = 'motofix_sp_notif_read'
