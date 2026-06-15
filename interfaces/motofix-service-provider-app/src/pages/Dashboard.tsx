@@ -195,6 +195,7 @@ export default function Dashboard() {
       type?: string; job?: Record<string, unknown>
       service_request_id?: string; job_id?: string | number; status?: string
       message?: string; sender_id?: string; cancelled_by?: string
+      request?: Record<string, unknown>
     } | null
     if (!msg?.type) return
 
@@ -218,7 +219,31 @@ export default function Dashboard() {
       // The backend sends the id as `job_id`; match it (string-safe) to the active job
       const rid = String(msg.job_id ?? msg.service_request_id ?? '')
       if (rid && rid === String(activeRequest.id)) {
-        setActiveRequest(prev => prev ? { ...prev, status: msg.status as ServiceRequest['status'] } : prev)
+        // The backend bundles a full request snapshot with every status_update.
+        // Merge its authoritative journey fields (en_route_at, eta_minutes, the
+        // other timestamps + completion_by) so the mechanic's map sim has the SAME
+        // journey clock the driver does — without this the pin/route never animate
+        // like the driver's. We only overlay defined fields so the richer existing
+        // job (issue_type, media_files, phone, …) is preserved.
+        const snap = msg.request ? normalizeRequest(msg.request) : null
+        setActiveRequest(prev => {
+          if (!prev) return prev
+          const merged: ServiceRequest = {
+            ...prev,
+            status: (snap?.status ?? msg.status) as ServiceRequest['status'],
+          }
+          if (snap) {
+            if (snap.accepted_at)        merged.accepted_at        = snap.accepted_at
+            if (snap.en_route_at)        merged.en_route_at        = snap.en_route_at
+            if (snap.arrived_at)         merged.arrived_at         = snap.arrived_at
+            if (snap.service_started_at) merged.service_started_at = snap.service_started_at
+            if (snap.completed_at)       merged.completed_at       = snap.completed_at
+            if (snap.eta_minutes != null) merged.eta_minutes       = snap.eta_minutes
+            const cb = msg.request?.completion_by
+            if (cb) (merged as unknown as Record<string, unknown>).completion_by = cb
+          }
+          return merged
+        })
         // Any status change can affect the counts: a cancellation drops the job
         // back out of Today / This-Week; completion keeps it and refreshes rating.
         loadHistoryStats(mechIdRef.current)
@@ -380,8 +405,11 @@ export default function Dashboard() {
       loadHistoryStats(mechIdRef.current)
       switchTab('jobs')
       toast.success("Job accepted — the driver has been notified. Tap “I'm On My Way” when you set off.")
-    } catch {
-      toast.error('Failed to accept job')
+    } catch (err) {
+      // Surface the server's reason — e.g. the 402 platform-fee gate ("settle your
+      // fees to accept new jobs") or the 403 cancellation suspension — not a generic message.
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail || 'Failed to accept job', { duration: detail ? 8000 : 4000 })
     }
   }
 

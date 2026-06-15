@@ -16,7 +16,7 @@ interface Props {
   requestId: string | number
   onClose: () => void
   // Called after a successful cancel with the strike/suspension outcome.
-  onCancelled: (outcome: { strikes: number; suspended: boolean; limit: number } | null) => void
+  onCancelled: (outcome: { strikes: number; suspended: boolean; limit: number; suspension_count?: number } | null) => void
 }
 
 export default function CancelJobModal({ requestId, onClose, onCancelled }: Props) {

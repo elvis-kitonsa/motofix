@@ -244,10 +244,23 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
 
   // Mechanic-initiated cancellation (with reason + suspension warning).
   const [cancelOpen, setCancelOpen] = useState(false)
-  const handleCancelled = useCallback((outcome: { strikes: number; suspended: boolean; limit: number } | null) => {
+  const handleCancelled = useCallback((outcome: { strikes: number; suspended: boolean; limit: number; suspension_count?: number } | null) => {
     setCancelOpen(false)
     if (outcome?.suspended) {
-      toast.error('Account suspended for repeated cancellations. Contact MOTOFIX support.', { duration: 8000 })
+      const repeat = (outcome.suspension_count ?? 1) > 1
+      toast.error(
+        repeat
+          ? 'Account suspended again for repeated cancellations. You must contact MOTOFIX Support to be reinstated — further offences may close your account.'
+          : 'Account suspended after 3 cancellations. Contact MOTOFIX Support to explain and be reinstated. A repeat will be treated more seriously.',
+        { duration: 9000 },
+      )
+    } else if (outcome && outcome.strikes > 0) {
+      // Escalating warning so the mechanic knows exactly where they stand.
+      const left = Math.max(0, (outcome.limit ?? 3) - outcome.strikes)
+      toast(
+        `Cancellation recorded — strike ${outcome.strikes} of ${outcome.limit ?? 3}. Cancel ${left} more in a row and you'll be temporarily suspended.`,
+        { icon: '⚠️', duration: 7000 },
+      )
     } else {
       toast('Job cancelled — the driver has been notified.', { duration: 5000 })
     }
@@ -714,7 +727,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   const actionConfig: Record<string, { label: string; next: string; disabled?: boolean }> = {
     accepted:    { label: "🚗 I'm On My Way",          next: 'en_route' },
     // en_route: handled automatically by proximity detection
-    arrived:     { label: '🔧 Starting Work Now',      next: 'in_progress', disabled: !quoteSent },
+    arrived:     { label: '🔧 Starting Work Now',      next: 'in_progress' },
     in_progress: { label: '✅ Service Provided – Done', next: 'awaiting_confirmation' },
   }
   const action = actionConfig[status]
@@ -987,85 +1000,32 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             )}
           </div>
 
-          {/* Progress card */}
+          {/* Progress card — Call/Chat/Navigate now ride beside the current step */}
           <div style={{ marginBottom: 12, background: C.surface2, borderRadius: 16, border: `1px solid ${C.border}`, padding: '14px 16px' }}>
-            <StatusBar status={status} />
+            <StatusBar
+              status={status}
+              actions={{
+                onCall: () => setShowCallSheet(true),
+                onChat: () => { setChatUnread(0); navigate(`/chat/${activeRequest.id}`) },
+                onNavigate: () => setMapExpanded(true),
+                chatUnread,
+              }}
+            />
           </div>
 
-          {/* Action buttons row */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button
-              onClick={() => setShowCallSheet(true)}
-              style={{ flex: 1, height: 44, borderRadius: 12, border: `1.5px solid ${C.amber}55`, background: C.amber + '10', color: C.amber, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-              <Phone style={{ width: 14, height: 14 }} /> Call
-            </button>
-            <button onClick={() => { setChatUnread(0); navigate(`/chat/${activeRequest.id}`) }}
-              style={{ position: 'relative', flex: 1, height: 44, borderRadius: 12, border: `1.5px solid ${C.blue}55`, background: C.blue + '10', color: C.blue, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-              <MessageCircle style={{ width: 14, height: 14 }} /> Chat
-              {chatUnread > 0 && (
-                <span style={{ position: 'absolute', top: -7, right: -7, minWidth: 19, height: 19, padding: '0 5px', borderRadius: 10, background: '#EF4444', color: '#fff', fontSize: 10, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg, #0b0e1a)' }}>
-                  {chatUnread > 9 ? '9+' : chatUnread}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setMapExpanded(true)}
-              style={{ flex: 1, height: 44, borderRadius: 12, border: `1.5px solid ${C.green}55`, background: C.green + '10', color: C.green, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-              <Navigation2 style={{ width: 14, height: 14 }} /> Navigate
-            </button>
-          </div>
-
-          {/* Arrived status: diagnosis + quote flow */}
+          {/* Arrived status: AI diagnosis (price-quote flow removed for now) */}
           {status === 'arrived' && (
             <div style={{ marginBottom: 12 }}>
-              {/* Diagnose button */}
               <button
                 onClick={() => setShowDiagnostic(true)}
                 style={{
                   width: '100%', height: 48, borderRadius: 12, border: `1px solid ${C.amber}50`,
                   background: `${C.amber}12`, color: C.amber, fontWeight: 700, fontSize: 14,
                   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  marginBottom: 10,
                 }}>
                 <Stethoscope style={{ width: 16, height: 16 }} />
                 Diagnose Vehicle with AI
               </button>
-
-              {/* Quote form */}
-              <div style={{ background: C.surface2, borderRadius: 12, border: `1px solid ${C.border}`, padding: '14px' }}>
-                <p style={{ fontSize: 12, fontWeight: 800, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
-                  💰 Price Quote
-                  {!quoteSent && <span style={{ fontSize: 11, color: C.amber, fontWeight: 600, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>(required before starting work)</span>}
-                </p>
-                <input type="number" placeholder="UGX amount" value={quoteAmount} onChange={e => setQuoteAmount(e.target.value)}
-                  style={{ width: '100%', height: 44, marginBottom: 8, borderRadius: 10, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 16, fontWeight: 700, padding: '0 12px', outline: 'none', boxSizing: 'border-box' }} />
-                <textarea placeholder="What did you find? (e.g. flat rear tyre — nail puncture)" value={quoteDesc} onChange={e => setQuoteDesc(e.target.value)}
-                  rows={2} style={{ width: '100%', borderRadius: 10, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 13, padding: '10px 12px', outline: 'none', resize: 'none', marginBottom: 8, boxSizing: 'border-box' }} />
-                <button onClick={sendQuote} disabled={!quoteAmount}
-                  style={{ width: '100%', height: 42, borderRadius: 10, border: 'none', background: quoteAmount ? `linear-gradient(135deg, ${C.amber}, ${C.amberDark})` : C.surface3, color: quoteAmount ? '#000' : C.textFaint, fontWeight: 700, fontSize: 13, cursor: quoteAmount ? 'pointer' : 'not-allowed' }}>
-                  {quoteSent ? '✓ Quote sent to driver' : 'Send Quote to Driver'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* In-progress: still allow updated quotes */}
-          {status === 'in_progress' && (
-            <div style={{ marginBottom: 12, background: C.surface2, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-              <button onClick={() => { setQuoteAmount(''); setQuoteDesc('') }}
-                style={{ width: '100%', padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: C.textMuted, fontSize: 13, fontWeight: 600 }}>
-                <span>💰 Send Updated Quote</span>
-              </button>
-              <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${C.border}` }}>
-                <input type="number" placeholder="UGX amount" value={quoteAmount} onChange={e => setQuoteAmount(e.target.value)}
-                  style={{ width: '100%', height: 44, marginTop: 10, marginBottom: 8, borderRadius: 10, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 16, fontWeight: 700, padding: '0 12px', outline: 'none', boxSizing: 'border-box' }} />
-                <textarea placeholder="Description…" value={quoteDesc} onChange={e => setQuoteDesc(e.target.value)}
-                  rows={2} style={{ width: '100%', borderRadius: 10, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 13, padding: '10px 12px', outline: 'none', resize: 'none', marginBottom: 8, boxSizing: 'border-box' }} />
-                <button onClick={sendQuote} disabled={!quoteAmount}
-                  style={{ width: '100%', height: 40, borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${C.amber}, ${C.amberDark})`, color: '#000', fontWeight: 700, fontSize: 13, cursor: quoteAmount ? 'pointer' : 'not-allowed' }}>
-                  {quoteSent ? 'Quote sent ✓' : 'Send to Driver'}
-                </button>
-              </div>
             </div>
           )}
 
