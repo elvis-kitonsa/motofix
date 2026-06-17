@@ -92,13 +92,6 @@ export default function ChangePassword() {
       <style>{`
         @keyframes sp-fade-up { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
         @keyframes sp-spin     { to{transform:rotate(360deg)} }
-        input:-webkit-autofill,
-        input:-webkit-autofill:hover,
-        input:-webkit-autofill:focus {
-          -webkit-box-shadow: 0 0 0px 1000px ${isDark ? 'rgba(255,255,255,0.06)' : '#ffffff'} inset !important;
-          -webkit-text-fill-color: var(--text-hi) !important;
-          caret-color: var(--text-hi);
-        }
       `}</style>
 
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>

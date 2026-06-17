@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ShieldCheck, AlertTriangle,
+  ShieldCheck, AlertTriangle, BadgeCheck,
   Bell, MapPin, Lock, Phone, LogOut,
   ChevronRight, Building2, Eye, EyeOff,
   User, HelpCircle, FileText, X, Check,
@@ -125,6 +125,8 @@ export default function Profile() {
   const [resolvedLocation, setResolvedLocation] = useState<string | null>(null)
   const [showPass, setShowPass] = useState(false)
   const [showSusp, setShowSusp] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showVerified, setShowVerified] = useState(false)
   const [showLic,  setShowLic]  = useState(false)
 
   const [curPass,  setCurPass]  = useState(''); const [showCur,  setShowCur]  = useState(false)
@@ -249,8 +251,21 @@ export default function Profile() {
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 20, letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: 8 }}>
-              {loading ? '…' : name}
+            <p style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 20, letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {loading ? '…' : name}
+              </span>
+              {/* Verified accounts get an amber badge with a white tick beside the name
+                  (X / WhatsApp style); tapping it explains the verified status. */}
+              {profile?.is_verified && (
+                <button
+                  onClick={() => setShowVerified(true)}
+                  aria-label="Verified — tap for details"
+                  style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'inline-flex', flexShrink: 0, lineHeight: 0 }}
+                >
+                  <BadgeCheck style={{ width: 20, height: 20, color: '#fff', fill: '#F59E0B', flexShrink: 0 }} />
+                </button>
+              )}
             </p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: `${Y}15`, border: `1px solid ${Y}30`, color: Y, fontSize: 11, fontWeight: 700 }}>
@@ -259,14 +274,13 @@ export default function Profile() {
                   : <Truck  style={{ width: 10, height: 10 }} />}
                 {isMechanic ? 'Mechanic' : 'Towing'}
               </span>
-              {profile?.is_verified
-                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: `${C.green}14`, border: `1px solid ${C.green}30`, color: C.green, fontSize: 11, fontWeight: 700 }}>
-                    <ShieldCheck style={{ width: 10, height: 10 }} /> Verified
-                  </span>
-                : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: `${Y}12`, border: `1px solid ${Y}28`, color: Y, fontSize: 11, fontWeight: 700 }}>
-                    Pending Review
-                  </span>
-              }
+              {/* "Verified" pill removed — the inline check by the name now conveys it.
+                  Unverified providers still show a pending indicator. */}
+              {!profile?.is_verified && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: `${Y}12`, border: `1px solid ${Y}28`, color: Y, fontSize: 11, fontWeight: 700 }}>
+                  Pending Review
+                </span>
+              )}
               {spn && (
                 <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 7, background: Y, color: '#000', fontSize: 11, fontWeight: 900, letterSpacing: '0.07em' }}>
                   {spn}
@@ -340,7 +354,7 @@ export default function Profile() {
         {/* ── Supplies ──────────────────────────────────────── */}
         <SLabel>Supplies</SLabel>
         <div style={{ borderRadius: 20, overflow: 'hidden', background: 'var(--surface-1)', border: cardBorder, marginBottom: 20 }}>
-          <QLink icon={Package} accent={C.purple} label="Spare Parts & Tools" sub="Find dealers and order equipment" onClick={() => navigate('/spare-parts')} last />
+          <QLink icon={Package} accent={C.purple} label="Spare Parts & Tools" sub="Browse & order genuine car parts" onClick={() => navigate('/spare-parts')} last />
         </div>
 
         {/* ── Settings & Support ────────────────────────────── */}
@@ -360,7 +374,7 @@ export default function Profile() {
         >
           <div>
             <p style={{ color: 'var(--text-dim)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 700, marginBottom: 3 }}>App Version</p>
-            <p style={{ color: 'var(--text-md)', fontSize: 13, fontWeight: 700 }}>MOTOFIX Provider v1.0.0</p>
+            <p style={{ color: 'var(--text-md)', fontSize: 13, fontWeight: 700 }}>MOTOFIX Provider v1.0.1 · fees-map-build</p>
           </div>
           <span style={{ padding: '4px 10px', borderRadius: 20, background: `${C.green}14`, border: `1px solid ${C.green}28`, color: C.green, fontSize: 10, fontWeight: 800 }}>
             Up to date
@@ -369,58 +383,56 @@ export default function Profile() {
 
         {/* ── Logout ───────────────────────────────────────── */}
         <button
-          onClick={handleLogout}
+          onClick={() => setShowLogoutConfirm(true)}
           style={{
-            width: '100%', borderRadius: 18, padding: '15px 20px',
-            border: `1.5px solid rgba(239,68,68,0.25)`,
-            background: 'rgba(239,68,68,0.07)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 10, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12,
-            transition: 'background 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s',
+            width: '100%', border: 'none',
+            borderRadius: 18, padding: '16px 20px',
+            background: '#dc2626',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12,
+            boxShadow: '0 4px 20px rgba(220,38,38,0.35)',
+            transition: 'background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background    = 'rgba(239,68,68,0.14)'
-            e.currentTarget.style.borderColor   = 'rgba(239,68,68,0.55)'
-            e.currentTarget.style.transform     = 'scale(1.012)'
-            e.currentTarget.style.boxShadow     = '0 0 20px rgba(239,68,68,0.20)'
+            e.currentTarget.style.background = '#b91c1c'
+            e.currentTarget.style.transform = 'scale(1.012)'
+            e.currentTarget.style.boxShadow = '0 6px 28px rgba(220,38,38,0.5)'
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.background    = 'rgba(239,68,68,0.07)'
-            e.currentTarget.style.borderColor   = 'rgba(239,68,68,0.25)'
-            e.currentTarget.style.transform     = 'scale(1)'
-            e.currentTarget.style.boxShadow     = 'none'
+            e.currentTarget.style.background = '#dc2626'
+            e.currentTarget.style.transform = 'scale(1)'
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(220,38,38,0.35)'
           }}
         >
-          <LogOut style={{ width: 16, height: 16, color: '#f87171' }} />
-          <span style={{ color: '#f87171', fontSize: 14, fontWeight: 800 }}>Logout</span>
+          <LogOut style={{ width: 16, height: 16, color: '#fff' }} />
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Logout</span>
         </button>
 
         {/* ── Danger zone ──────────────────────────────────── */}
         <button
           onClick={() => setShowSusp(true)}
           style={{
-            width: '100%', borderRadius: 18, padding: '15px 20px',
-            border: `1.5px solid rgba(239,68,68,0.20)`,
-            background: 'rgba(239,68,68,0.05)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 10, cursor: 'pointer', fontFamily: 'inherit',
-            transition: 'background 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s',
+            width: '100%', border: 'none',
+            borderRadius: 18, padding: '16px 20px',
+            background: '#dc2626',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            cursor: 'pointer', fontFamily: 'inherit',
+            boxShadow: '0 4px 20px rgba(220,38,38,0.35)',
+            transition: 'background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background    = 'rgba(239,68,68,0.12)'
-            e.currentTarget.style.borderColor   = 'rgba(239,68,68,0.45)'
-            e.currentTarget.style.transform     = 'scale(1.012)'
-            e.currentTarget.style.boxShadow     = '0 0 16px rgba(239,68,68,0.15)'
+            e.currentTarget.style.background = '#b91c1c'
+            e.currentTarget.style.transform = 'scale(1.012)'
+            e.currentTarget.style.boxShadow = '0 6px 28px rgba(220,38,38,0.5)'
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.background    = 'rgba(239,68,68,0.05)'
-            e.currentTarget.style.borderColor   = 'rgba(239,68,68,0.20)'
-            e.currentTarget.style.transform     = 'scale(1)'
-            e.currentTarget.style.boxShadow     = 'none'
+            e.currentTarget.style.background = '#dc2626'
+            e.currentTarget.style.transform = 'scale(1)'
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(220,38,38,0.35)'
           }}
         >
-          <AlertTriangle style={{ width: 16, height: 16, color: '#f87171' }} />
-          <span style={{ color: '#f87171', fontSize: 14, fontWeight: 800 }}>Request Account Suspension</span>
+          <AlertTriangle style={{ width: 16, height: 16, color: '#fff' }} />
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Request Account Suspension</span>
         </button>
 
       </div>
@@ -473,11 +485,54 @@ export default function Profile() {
                 This will temporarily disable your account and stop incoming job requests. Our team will contact you to confirm before any changes are made.
               </p>
               <button onClick={() => { toast.success('Suspension request sent. Our team will contact you.'); setShowSusp(false) }}
-                style={{ width: '100%', height: 48, borderRadius: 14, border: '1px solid rgba(239,68,68,0.45)', background: 'rgba(239,68,68,0.14)', color: '#f87171', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                style={{ width: '100%', height: 48, borderRadius: 14, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 20px rgba(220,38,38,0.35)' }}>
                 <Check style={{ width: 15, height: 15 }} /> Yes, Request Suspension
               </button>
               <button onClick={() => setShowSusp(false)}
-                style={{ width: '100%', height: 44, borderRadius: 14, border: '1px solid var(--border-2)', background: 'transparent', color: 'var(--text-md)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ width: '100%', height: 44, borderRadius: 14, border: 'none', background: 'var(--live-bg)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showVerified && (
+        <>
+          <div onClick={() => setShowVerified(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
+          <div style={{ position: 'fixed', inset: 0, zIndex: 301, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, pointerEvents: 'none' }}>
+            <div style={{ background: 'var(--sheet-bg)', borderRadius: 24, padding: '28px 24px', maxWidth: 340, width: '100%', border: `1.5px solid ${Y}40`, pointerEvents: 'auto', textAlign: 'center' }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px', background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 20px rgba(245,158,11,0.4)' }}>
+                <BadgeCheck style={{ width: 34, height: 34, color: '#fff' }} />
+              </div>
+              <p style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-hi)', marginBottom: 8 }}>Verified Provider</p>
+              <p style={{ fontSize: 13, color: 'var(--text-md)', lineHeight: 1.65, marginBottom: 22 }}>
+                {name}'s identity and documents have been reviewed and approved by MOTOFIX. This badge tells drivers you're a vetted, trusted provider on the platform.
+              </p>
+              <button onClick={() => setShowVerified(false)}
+                style={{ width: '100%', height: 46, borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#000', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showLogoutConfirm && (
+        <>
+          <div onClick={() => setShowLogoutConfirm(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
+          <div style={{ position: 'fixed', inset: 0, zIndex: 301, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, pointerEvents: 'none' }}>
+            <div style={{ background: 'var(--sheet-bg)', borderRadius: 24, padding: 28, maxWidth: 360, width: '100%', border: `1.5px solid rgba(239,68,68,0.30)`, pointerEvents: 'auto' }}>
+              <p style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-hi)', marginBottom: 10 }}>Log out?</p>
+              <p style={{ fontSize: 13, color: 'var(--text-md)', lineHeight: 1.65, marginBottom: 22 }}>
+                You'll need to sign in again with your SPN and password to get back in.
+              </p>
+              <button onClick={handleLogout}
+                style={{ width: '100%', height: 48, borderRadius: 14, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 20px rgba(220,38,38,0.35)' }}>
+                <LogOut style={{ width: 15, height: 15 }} /> Yes, Log out
+              </button>
+              <button onClick={() => setShowLogoutConfirm(false)}
+                style={{ width: '100%', height: 44, borderRadius: 14, border: 'none', background: 'var(--live-bg)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
                 Cancel
               </button>
             </div>
