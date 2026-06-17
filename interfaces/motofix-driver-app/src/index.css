@@ -69,6 +69,8 @@
     --overlay-bg: rgba(8,9,15,0.92);
     --card-shadow: none;
     --input-bg:   rgba(255,255,255,0.05);
+    /* Opaque field colour — masks the browser's translucent yellow autofill fill. */
+    --input-bg-solid: hsl(220, 18%, 11%);
     --sos-bg:            #ff2d2d;
     --sos-border-color:  transparent;
     --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
@@ -140,6 +142,8 @@
     --overlay-bg: rgba(8,9,15,0.92);
     --card-shadow: none;
     --input-bg:   rgba(255,255,255,0.05);
+    /* Opaque field colour — masks the browser's translucent yellow autofill fill. */
+    --input-bg-solid: hsl(220, 18%, 11%);
     --sos-bg:            #ff2d2d;
     --sos-border-color:  transparent;
     --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
@@ -229,6 +233,7 @@
     --overlay-bg: rgba(250,248,244,0.97);
     --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
     --input-bg:   #ffffff;
+    --input-bg-solid: #ffffff;
     --sos-bg:            #ff2d2d;
     --sos-border-color:  transparent;
     --sos-shadow:        0 12px 48px rgba(255,45,45,0.45);
@@ -279,6 +284,43 @@
   body {
     @apply bg-background text-foreground antialiased;
     min-height: 100dvh;
+  }
+
+  /* ── Autofill: stop the browser painting fields yellow with unreadable text ──
+     Three SEPARATE blocks: an unknown vendor pseudo-class invalidates the whole
+     selector list, so -webkit / standard :autofill / -moz must not be combined. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+    box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+    -webkit-text-fill-color: var(--text-hi) !important;
+    caret-color: var(--text-hi);
+    transition: background-color 9999s ease-in-out 0s;
+  }
+  /* Modern standard pseudo (Chrome + Firefox 86+). */
+  input:autofill,
+  textarea:autofill,
+  select:autofill {
+    box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+    -webkit-text-fill-color: var(--text-hi) !important;
+    color: var(--text-hi) !important;
+    caret-color: var(--text-hi);
+    filter: none !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+  /* Firefox tints autofill with a FILTER (not a background) — `filter: none` kills it. */
+  input:-moz-autofill,
+  input:-moz-autofill-preview,
+  textarea:-moz-autofill,
+  select:-moz-autofill {
+    filter: none !important;
+    box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+    color: var(--text-hi) !important;
+    caret-color: var(--text-hi);
   }
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { authService } from '@/config/api';
+import { startActivity, clearInactivity } from '@/utils/sessionTimeout';
 
 const STORAGE_SETTINGS_KEY = 'motofix_settings';
 
@@ -208,6 +209,9 @@ export function useAuth() {
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
       console.log('✅ User saved to localStorage');
 
+      clearInactivity();  // drop any stale inactivity flag
+      startActivity();    // begin the 10-minute idle clock for this session
+
       setUser(userData);
       setIsAuthenticated(true);
       window.dispatchEvent(new Event('motofix:auth-changed'));
@@ -234,6 +238,7 @@ export function useAuth() {
     localStorage.removeItem(STORAGE_TOKEN_KEY);
     localStorage.removeItem(STORAGE_USER_KEY);
     localStorage.removeItem(STORAGE_LAST_AUTH_CHECK);
+    clearInactivity();
     console.log('✅ localStorage cleared');
     
     // Clear state
