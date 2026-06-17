@@ -1,13 +1,15 @@
 import { useMemo, useState, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useRotatingGreeting } from '@/hooks/useRotatingGreeting'
 import MechanicalRepairsView from './MechanicalRepairsView'
+import RatingsView from './RatingsView'
 import {
-  Briefcase, Wallet, Star, ChevronRight,
+  Briefcase, Wallet, Star, ChevronRight, Award,
   Wrench, Truck, TrendingUp, CheckCircle,
   Navigation2, BookOpen, X,
-  Zap, AlertTriangle, MessageSquare, Camera,
+  Zap, AlertTriangle, MessageSquare, Camera, Package,
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { formatUGX } from '@/utils/formatters'
 import StatExplainerModal, { type StatMetric } from '@/components/StatExplainerModal'
 import type { MechanicProfile, ServiceRequest } from '@/types'
 
@@ -203,16 +205,18 @@ export default function Home({
   todayCount, weekCount, handledJobs = [], ratingRows = [],
   onGoToJobs, onGoToEarnings,
 }: HomeProps) {
+  const navigate = useNavigate()
   const { theme } = useTheme()
   const isDark = theme === 'dark'
   const cardBorder = isDark ? '1.5px solid rgba(255,255,255,0.20)' : '1.5px solid rgba(0,0,0,0.65)'
-  const greeting = useMemo(pickGreeting, [])
+  const greeting = useRotatingGreeting()
   const lastName  = profile?.full_name ? getLocalName(profile.full_name) : null
   const isTowing  = profile?.provider_type === 'towing_provider'
   const [hoveredAction, setHoveredAction] = useState<string | null>(null)
   const [selectedTip, setSelectedTip]     = useState<typeof TIPS[0] | null>(null)
   const [showReadyModal,   setShowReadyModal]   = useState(false)
   const [showRepairsView,  setShowRepairsView]  = useState(false)
+  const [showRatingsView,  setShowRatingsView]  = useState(false)
   const [statModal,        setStatModal]        = useState<StatMetric | null>(null)
   const readySheetRef  = useRef<HTMLDivElement>(null)
   const dragStartY     = useRef(0)
@@ -249,10 +253,12 @@ export default function Home({
     { id: 'towing',   label: 'Towing & Recovery',    icon: Truck,    color: '#60A5FA', desc: 'Vehicle recovery · Roadside towing',             onClick: onGoToJobs     },
     { id: 'jobs',     label: 'Job Requests',          icon: Briefcase,color: '#F59E0B', desc: 'Browse and accept available requests nearby',    onClick: onGoToJobs     },
     { id: 'earnings', label: 'Earnings & Payments',   icon: Wallet,   color: '#4ADE80', desc: 'Track your income and payment history',          onClick: onGoToEarnings },
+    { id: 'spareparts', label: 'Spare Parts & Tools', icon: Package,  color: '#A78BFA', desc: 'Browse & order genuine car parts',                   onClick: () => navigate('/spare-parts') },
   ] : [
     { id: 'repairs',  label: 'Mechanical Repairs',    icon: Wrench,   color: '#F59E0B', desc: 'Engine · Tyres · Battery · Roadside repair',    onClick: () => setShowRepairsView(true) },
     { id: 'jobs',     label: 'Job Requests',          icon: Briefcase,color: '#60A5FA', desc: 'Browse and accept available requests nearby',    onClick: onGoToJobs     },
     { id: 'earnings', label: 'Earnings & Payments',   icon: Wallet,   color: '#4ADE80', desc: 'Track your income and payment history',          onClick: onGoToEarnings },
+    { id: 'spareparts', label: 'Spare Parts & Tools', icon: Package,  color: '#A78BFA', desc: 'Browse & order genuine car parts',                   onClick: () => navigate('/spare-parts') },
   ]
 
   return (
@@ -509,10 +515,10 @@ export default function Home({
             padding: '18px 20px', marginBottom: 20, cursor: 'pointer',
             transition: 'background 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
           }}
-          onClick={onGoToEarnings}
+          onClick={() => setShowRatingsView(true)}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLDivElement).style.background = 'rgba(245,158,11,0.06)'
-            ;(e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(245,158,11,0.55)'
+            (e.currentTarget as HTMLDivElement).style.background = 'rgba(96,165,250,0.06)'
+            ;(e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(96,165,250,0.55)'
             ;(e.currentTarget as HTMLDivElement).style.transform = 'scale(1.012)'
           }}
           onMouseLeave={e => {
@@ -522,18 +528,18 @@ export default function Home({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 16, flexShrink: 0, background: 'rgba(245,158,11,0.10)', border: '1.5px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wallet style={{ width: 22, height: 22, color: '#F59E0B' }} />
+            <div style={{ width: 52, height: 52, borderRadius: 16, flexShrink: 0, background: 'rgba(96,165,250,0.10)', border: '1.5px solid rgba(96,165,250,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Award style={{ width: 22, height: 22, color: '#60A5FA' }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ color: 'var(--text-hi)', fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
-                {formatUGX(profile?.earnings ?? 0)} Earned
+                {profile?.jobs_completed ?? 0} Jobs Completed
               </p>
               <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 5, lineHeight: 1.4 }}>
-                {profile?.jobs_completed ?? 0} jobs completed · Tap to view breakdown
+                {(profile?.rating ?? profile?.average_rating ?? 0).toFixed(1)}★ average rating · Tap to view your ratings
               </p>
             </div>
-            <ChevronRight style={{ width: 20, height: 20, color: 'rgba(245,158,11,0.5)', flexShrink: 0 }} />
+            <ChevronRight style={{ width: 20, height: 20, color: 'rgba(96,165,250,0.5)', flexShrink: 0 }} />
           </div>
         </div>
 
@@ -593,6 +599,7 @@ export default function Home({
 
       {/* Mechanical Repairs full-screen view */}
       {showRepairsView && <MechanicalRepairsView onBack={() => setShowRepairsView(false)} />}
+      {showRatingsView && <RatingsView onBack={() => setShowRatingsView(false)} />}
 
       {/* Ready to work modal */}
       {showReadyModal && (
