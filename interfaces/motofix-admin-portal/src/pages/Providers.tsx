@@ -21,7 +21,7 @@ import {
 } from '@/lib/api';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Phone, MapPin, Star, Pencil, Trash2, Wrench, Truck, BadgeCheck, Search, X, Ban, CheckCircle, KeyRound, Copy, UserPlus, ClipboardList } from 'lucide-react';
+import { Phone, MapPin, Star, Pencil, Trash2, Wrench, Truck, BadgeCheck, Search, X, Ban, CheckCircle, KeyRound, Copy, UserPlus, ClipboardList, ShieldCheck } from 'lucide-react';
 
 // ── Unified row type ─────────────────────────────────────────────
 interface ProviderRow {
@@ -46,6 +46,40 @@ function toRow(m: Mechanic): ProviderRow {
 }
 function toTowingRow(t: TowingProvider): ProviderRow {
   return { id: t.id, type: 'towing', name: t.name, phone: t.phone, location: t.location, verified: t.verified, joinedAt: t.joinedAt, isBanned: t.isBanned, banReason: t.banReason, spn: t.spn, available: t.available, _raw: t };
+}
+
+// Shows a "Reinstate" action only for mechanics currently suspended for repeated
+// cancellations. The mechanic must contact support first; the admin lifts it here.
+function ReinstateAction({ row }: { row: ProviderRow }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['mech-strikes', row.id],
+    queryFn: () => fetchMechanicStrikes(row.id),
+    enabled: row.type === 'mechanic',
+    staleTime: 30_000,
+  });
+  const mut = useMutation({
+    mutationFn: () => reinstateMechanic(row.id),
+    onSuccess: (res) => {
+      toast.success(`Suspension lifted — ${row.name} reinstated.`);
+      qc.invalidateQueries({ queryKey: ['mech-strikes', row.id] });
+      if ((res?.suspension_count ?? 0) > 1) {
+        toast.warning(`Note: this mechanic has now been suspended ${res.suspension_count} times.`);
+      }
+    },
+    onError: () => toast.error('Failed to reinstate mechanic'),
+  });
+  if (!data?.suspended) return null;
+  return (
+    <Button
+      variant="ghost" size="sm"
+      className="h-8 gap-1.5 text-green-500 hover:text-green-500 hover:bg-green-500/10"
+      title={`Lift cancellation suspension (suspended ${data.suspension_count}×)`}
+      onClick={() => mut.mutate()} disabled={mut.isPending}
+    >
+      <ShieldCheck size={13} /> Reinstate
+    </Button>
+  );
 }
 
 export default function Providers() {
@@ -308,6 +342,7 @@ export default function Providers() {
               <KeyRound size={14} />
             </Button>
           )}
+          <ReinstateAction row={row.original} />
           {row.original.isBanned ? (
             <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-green-500 hover:text-green-500 hover:bg-green-500/10"
               onClick={() => unbanMut.mutate(row.original)} disabled={unbanMut.isPending}>
