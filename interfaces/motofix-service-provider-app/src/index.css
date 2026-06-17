@@ -9,6 +9,9 @@ html.dark {
   --surface-4:   rgba(255,255,255,0.075);
   --surface-5:   rgba(255,255,255,0.10);
   --input-bg:    rgba(255,255,255,0.050);
+  /* Opaque equivalent of an input on the page bg — used to mask the browser's
+     yellow autofill background (a translucent value lets the yellow bleed through). */
+  --input-bg-solid: hsl(220, 16%, 11%);
   --text-hi:     rgba(255,255,255,0.88);
   --text-md:     rgba(255,255,255,0.60);
   --text-lo:     rgba(255,255,255,0.45);
@@ -56,14 +59,15 @@ html.dark {
 /* ── Light theme ──────────────────────────────────────────────────────── */
 html.light {
   --foreground:  220 25% 6%;
-  --bg:          hsl(220, 20%, 96%);
-  --page-bg:     hsl(220, 20%, 96%);
+  --bg:          #ffffff;
+  --page-bg:     #ffffff;
   --surface-1:   #ffffff;
   --surface-2:   rgba(0,0,0,0.04);
   --surface-3:   rgba(0,0,0,0.06);
   --surface-4:   rgba(0,0,0,0.08);
   --surface-5:   rgba(0,0,0,0.11);
   --input-bg:    #ffffff;
+  --input-bg-solid: #ffffff;
   --text-hi:     #000000;
   --text-md:     rgba(0,0,0,0.85);
   --text-lo:     rgba(0,0,0,0.72);
@@ -74,11 +78,11 @@ html.light {
   --border-2:    rgba(0,0,0,0.85);
   --border-3:    rgba(0,0,0,0.90);
   --border-4:    rgba(0,0,0,0.95);
-  --nav-bg:      rgba(245,247,252,0.97);
-  --nav-solid:   hsl(220, 20%, 96%);
-  --header-bg:   rgba(245,247,252,0.97);
-  --sheet-bg:    rgba(242,244,250,0.99);
-  --overlay-bg:  rgba(242,244,250,0.97);
+  --nav-bg:      rgba(255,255,255,0.97);
+  --nav-solid:   #ffffff;
+  --header-bg:   rgba(255,255,255,0.97);
+  --sheet-bg:    #ffffff;
+  --overlay-bg:  rgba(255,255,255,0.98);
   --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
   --glow-amber:  0 0 18px rgba(217,119,6,0.22);
   --glow-amber-intense: 0 0 36px rgba(217,119,6,0.38);
@@ -103,6 +107,56 @@ html.light {
   --live-ring-2:      rgba(255,255,255,0.27);
   --live-dot-bg:      rgba(0,0,0,0.22);
   --live-dot-border:  rgba(255,255,255,0.50);
+}
+
+/* ── Autofill: stop the browser painting fields yellow with unreadable text ──
+   Applies app-wide (login, sign-up, every form). The inset box-shadow masks the
+   UA autofill background with an opaque theme colour, text-fill-color keeps the
+   typed text readable, and the long transition defeats the brief yellow flash. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+  box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+  -webkit-text-fill-color: var(--text-hi) !important;
+  caret-color: var(--text-hi);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Standard pseudo — modern Chrome + Firefox 86+. Kept in its own rule (NOT in the
+   -webkit list above) because an unknown pseudo-class invalidates the whole selector
+   list in the browser that doesn't recognise it. */
+input:autofill,
+textarea:autofill,
+select:autofill {
+  box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+  -webkit-text-fill-color: var(--text-hi) !important;
+  color: var(--text-hi) !important;
+  caret-color: var(--text-hi);
+  filter: none !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Firefox paints the autofill highlight with a FILTER (not a background), so the
+   box-shadow trick alone can't hide the yellow — `filter: none` neutralises the tint
+   and lets the field's real (dark) background + light text show through. Separate
+   rule so the -moz pseudo can't void the others. */
+input:-moz-autofill,
+input:-moz-autofill:focus,
+input:-moz-autofill-preview,
+textarea:-moz-autofill,
+select:-moz-autofill {
+  filter: none !important;
+  box-shadow: 0 0 0 1000px var(--input-bg-solid) inset !important;
+  color: var(--text-hi) !important;
+  caret-color: var(--text-hi);
 }
 
 /* ── Utility classes ───────────────────────────────────────────────────── */

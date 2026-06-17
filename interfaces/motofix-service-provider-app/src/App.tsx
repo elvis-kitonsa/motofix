@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import InactivityGuard from '@/components/InactivityGuard'
 import { useFcmToken } from '@/hooks/useFcmToken'
 import ChangePassword from '@/pages/ChangePassword'
 import Login from '@/pages/Login'
@@ -28,7 +29,8 @@ function Placeholder({ name }: { name: string }) {
 }
 
 function RootRedirect() {
-  const token = localStorage.getItem('motofix_sp_token')
+  let token: string | null = null
+  try { token = localStorage.getItem('motofix_sp_token') } catch { /* storage blocked */ }
   return <Navigate to={token ? '/dashboard' : '/intro'} replace />
 }
 
@@ -48,7 +50,22 @@ function AppRoutes() {
   useFcmToken(isAuthenticated)
   return (
     <>
-      <Toaster position="top-center" richColors theme={theme} />
+      <Toaster
+        position="top-center"
+        theme={theme}
+        richColors
+        visibleToasts={1}
+        duration={3500}
+        closeButton
+        toastOptions={{
+          style: {
+            background: 'var(--overlay-bg)',
+            border: '1px solid var(--border-3)',
+            color: 'var(--text-hi)',
+          },
+        }}
+      />
+      <InactivityGuard />
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/intro" element={<Splash />} />
