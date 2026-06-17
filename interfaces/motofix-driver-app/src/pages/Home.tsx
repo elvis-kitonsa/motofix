@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useRequests } from '@/contexts/RequestContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useRotatingGreeting } from '@/hooks/useRotatingGreeting';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
   Truck, Wrench, AlertTriangle,
@@ -371,7 +372,8 @@ export default function Home() {
   const hasActive = !!activeReq;
   const history   = requests.filter(r =>  ['completed', 'cancelled'].includes(r.status));
   const completed = history.filter(r => r.status === 'completed').length;
-  const { question, firstName, initials } = greeting(user?.full_name);
+  const { firstName, initials } = greeting(user?.full_name);
+  const question = useRotatingGreeting();
 
   const goRequest = (issueType?: string, breakdownPrefs?: { fixOnSpot: boolean; allowTow: boolean }) => {
     if (hasActive) {
