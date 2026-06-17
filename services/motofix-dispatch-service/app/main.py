@@ -202,6 +202,12 @@ async def run_migrations(db_pool: asyncpg.Pool):
             """)
             logger.info("✅ service_requests.mechanic_id column ensured")
 
+            # Final bill the mechanic enters at completion: the charge + what was fixed
+            # (the tickable AI fix list, joined). Shown to the driver as the pay breakdown.
+            await conn.execute("ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS actual_fee INTEGER NULL")
+            await conn.execute("ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS service_note TEXT NULL")
+            logger.info("✅ service_requests.actual_fee + service_note columns ensured")
+
             # Job lifecycle timestamps (analytics + tracking)
             await conn.execute("""
                 ALTER TABLE service_requests
@@ -914,7 +920,7 @@ async def create_request(
             (customer_name, service_type, location, description, phone, status, user_id, dispatched_at)
             VALUES ($1, $2, $3, $4, $5, 'pending', $6, NOW())
             RETURNING id, customer_name, service_type, location, description, phone, status, created_at, user_id, mechanic_id,
-                      dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+                      dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
         """
         try:
             result = await db.fetchrow(
@@ -1060,7 +1066,7 @@ async def create_request_with_media(
         (customer_name, service_type, location, description, phone, status, user_id, dispatched_at)
         VALUES ($1, $2, $3, $4, $5, 'pending', $6, NOW())
         RETURNING id, customer_name, service_type, location, description, phone, status, created_at, user_id, mechanic_id,
-                  dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+                  dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
     """
     result = await db.fetchrow(
         query,
@@ -1159,7 +1165,7 @@ async def get_requests(
 
         query = """
             SELECT id, customer_name, service_type, location, description, phone, status, created_at,
-                   user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+                   user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
             FROM service_requests
             WHERE
                 (
@@ -1230,7 +1236,7 @@ async def get_pending_requests(current_user: Dict = Depends(get_current_user), d
         rows = await db.fetch("""
             SELECT id, customer_name, service_type, location, description, status, created_at,
                    user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at,
-                   service_started_at, completed_at, eta_minutes, completion_by
+                   service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
             FROM service_requests
             WHERE status = 'pending' AND mechanic_id IS NULL
             ORDER BY created_at DESC
@@ -1263,7 +1269,7 @@ async def get_request(request_id: int, current_user: Dict = Depends(get_current_
     """Get single request with media files"""
     query = """
         SELECT id, customer_name, service_type, location, description, phone, status, created_at,
-               user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+               user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
         FROM service_requests
         WHERE id = $1
     """
@@ -1477,8 +1483,9 @@ async def accept_request(
                 detail="Your account is suspended for repeatedly cancelling jobs. Contact MOTOFIX support.",
             )
 
-        # Platform-fee gate: too many unpaid completed-job fees blocks new acceptances
+        # Platform-fee gate: too many unpaid completed-job fees would block new acceptances
         # until the mechanic settles their balance (this replaces the subscription gate).
+        # Dormant for the presentation — `gated` is only true when FEE_ENFORCE_GATE is on.
         fee_state = await _fee_state(db, mechanic_id)
         if fee_state["gated"]:
             raise HTTPException(
@@ -1499,7 +1506,7 @@ async def accept_request(
                     accepted_at = COALESCE(accepted_at, NOW())
                 WHERE id = $1 AND status = 'pending' AND mechanic_id IS NULL
                 RETURNING id, customer_name, service_type, location, description, phone, status, created_at,
-                          user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+                          user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
                 """,
                 request_id,
                 mechanic_id,
@@ -1645,7 +1652,7 @@ async def redispatch_request(
         SET dispatched_at = NOW()
         WHERE id = $1
         RETURNING id, customer_name, service_type, location, description, status, created_at,
-                  user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+                  user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
         """,
         request_id,
     )
@@ -1767,8 +1774,13 @@ async def _reset_mechanic_strikes(db, mechanic_id: int) -> None:
 
 # ─── Platform fee ledger — MOTOFIX revenue (replaces the monthly subscription) ──
 PLATFORM_FEE      = 10000  # flat UGX owed per completed job earned through the platform
-FEE_GATE_JOBS     = 5      # unpaid completed jobs before new-job acceptance is blocked
+FEE_GATE_JOBS     = 3      # strike-three: 3 unpaid completed jobs (UGX 30,000) is the threshold
 FEE_DEFAULT_HOURS = 48     # hours an over-cap balance may sit before the account hard-locks
+# Presentation choice: we surface the owed balance and the strike-three threshold, but we do
+# NOT block or lock a mechanic for non-payment yet. Enforcing an access block on an informal,
+# trust-first market is heavy-handed for a demo, so it's deliberately left for production —
+# flip this to True there to re-arm the accept gate + hard-lock computed in `_fee_state`.
+FEE_ENFORCE_GATE  = False
 
 async def _accrue_platform_fee(db, mechanic_id: int, request_id: int) -> None:
     """A completed job → the mechanic owes a flat platform fee. request_id is UNIQUE
@@ -1786,20 +1798,41 @@ async def _fee_state(db, mechanic_id: int) -> dict:
     """Outstanding-fee snapshot used by the accept gate, the mechanic balance screen,
     and the hard-lock check. `gated` blocks accepting new jobs; `locked` is a full
     account lock once an over-cap balance has sat past the grace window."""
+    # Join each owed fee back to the job that incurred it, so the mechanic sees exactly
+    # which completed job each 10k is for (service, customer, what they earned, when it
+    # finished) — an itemised statement they can't dispute, not just a bare amount.
     rows = await db.fetch(
         """
-        SELECT request_id, amount, created_at FROM platform_fees
-        WHERE mechanic_id = $1 AND status = 'owed' ORDER BY created_at ASC
+        SELECT pf.request_id, pf.amount, pf.created_at,
+               sr.service_type, sr.customer_name, sr.location,
+               sr.actual_fee, sr.completed_at, sr.service_note
+        FROM platform_fees pf
+        LEFT JOIN service_requests sr ON sr.id = pf.request_id
+        WHERE pf.mechanic_id = $1 AND pf.status = 'owed'
+        ORDER BY pf.created_at ASC
         """,
         mechanic_id,
     )
     jobs = [
-        {"request_id": r["request_id"], "amount": int(r["amount"]),
-         "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+        {
+            "request_id": r["request_id"],
+            "amount": int(r["amount"]),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "service_type": r["service_type"],
+            "customer_name": r["customer_name"],
+            "location": r["location"],
+            "job_fee": int(r["actual_fee"]) if r["actual_fee"] is not None else None,
+            "completed_at": r["completed_at"].isoformat() if r["completed_at"] else None,
+            "service_note": r["service_note"],
+        }
         for r in rows
     ]
     owed_count = len(jobs)
-    gated = owed_count >= FEE_GATE_JOBS
+    over_threshold = owed_count >= FEE_GATE_JOBS
+    # Enforcement (blocking new jobs / hard-locking) is off for the presentation — see
+    # FEE_ENFORCE_GATE. The balance and progress toward the threshold are still reported so
+    # the mechanic sees what they owe; we just don't act on it yet.
+    gated = FEE_ENFORCE_GATE and over_threshold
     locked = False
     if gated and rows and rows[0]["created_at"] is not None:
         age_h = (datetime.utcnow() - rows[0]["created_at"].replace(tzinfo=None)).total_seconds() / 3600
@@ -1924,6 +1957,8 @@ async def update_status(
     status: str,
     eta_minutes: Optional[int] = None,
     cancel_reason: Optional[str] = None,
+    actual_fee: Optional[int] = None,
+    note: Optional[str] = None,
     current_user: Dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -2013,6 +2048,12 @@ async def update_status(
             "UPDATE service_requests SET awaiting_confirmation_at = NOW(), completion_by = $1 WHERE id = $2",
             role, request_id,
         )
+        # Persist the mechanic's final charge + what-was-fixed note so the driver can
+        # see the amount + breakdown and pay.
+        if actual_fee is not None:
+            await db.execute("UPDATE service_requests SET actual_fee = $1 WHERE id = $2", int(actual_fee), request_id)
+        if note is not None:
+            await db.execute("UPDATE service_requests SET service_note = $1 WHERE id = $2", note, request_id)
 
     if ts_column:
         await db.execute(
@@ -2117,7 +2158,7 @@ async def update_status(
     snap = await db.fetchrow(
         """
         SELECT id, customer_name, service_type, location, description, status, created_at,
-               user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by
+               user_id, mechanic_id, dispatched_at, accepted_at, en_route_at, arrived_at, service_started_at, completed_at, eta_minutes, completion_by, actual_fee, service_note
         FROM service_requests WHERE id = $1
         """,
         request_id,
