@@ -1,7 +1,8 @@
 import { Navigate, useLocation } from 'react-router-dom'
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('motofix_sp_token')
+  let token: string | null = null
+  try { token = localStorage.getItem('motofix_sp_token') } catch { /* storage blocked */ }
   const location = useLocation()
 
   if (!token) return <Navigate to="/login" replace />

@@ -8,7 +8,7 @@ function splashDisabled(): boolean {
 import {
   ChevronLeft, Phone, Car, Shield, LogOut,
   ChevronRight, Clock, Bell, HelpCircle, Info,
-  Pencil, Check, X, Loader2, User, Settings as SettingsIcon, Star, Lock,
+  Pencil, Check, X, Loader2, User, Settings as SettingsIcon, Star, Lock, BadgeCheck,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -214,6 +214,7 @@ export default function Profile() {
   const initials = getInitials(user?.full_name);
 
   const [overlayPhase, setOverlayPhase] = useState<'visible' | 'fading' | 'gone'>(() => splashDisabled() ? 'gone' : 'visible');
+  const [showVerified, setShowVerified] = useState(false);
 
   useEffect(() => {
     if (splashDisabled()) return;
@@ -336,9 +337,19 @@ export default function Profile() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p
               className="pf-driver-name"
-              style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 20, letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: 8 }}
+              style={{ color: 'var(--text-hi)', fontWeight: 900, fontSize: 20, letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              {user?.full_name ?? 'Driver'}
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.full_name ?? 'Driver'}
+              </span>
+              {/* ID-verified drivers get an amber badge with a white tick; tap for details. */}
+              <button
+                onClick={() => setShowVerified(true)}
+                aria-label="Verified — tap for details"
+                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'inline-flex', flexShrink: 0, lineHeight: 0 }}
+              >
+                <BadgeCheck style={{ width: 20, height: 20, color: '#fff', fill: '#F59E0B', flexShrink: 0 }} />
+              </button>
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <span style={{
@@ -531,7 +542,7 @@ export default function Profile() {
             { icon: Clock,         label: 'Service History', sub: 'View your past requests',          accent: '#F59E0B', action: () => navigate('/history')   },
             { icon: Bell,          label: 'Reminders',       sub: 'Driver checklist & vehicle tips',  accent: '#60A5FA', action: () => navigate('/reminders') },
             { icon: SettingsIcon,  label: 'Settings',        sub: 'Notifications, theme & privacy',   accent: '#A78BFA', action: () => navigate('/settings')  },
-            { icon: HelpCircle,    label: 'Help & Support',  sub: 'Get assistance from MOTOFIX',      accent: '#34D399', action: () => {}                     },
+            { icon: HelpCircle,    label: 'Help & Support',  sub: 'Get assistance from MOTOFIX',      accent: '#34D399', action: () => navigate('/contact-support') },
           ].map(({ icon: Icon, label, sub, accent, action }, idx, arr) => (
             <button
               key={label}
@@ -665,6 +676,27 @@ export default function Profile() {
           color: var(--text-md) !important;
         }
       `}</style>
+
+      {showVerified && (
+        <>
+          <div onClick={() => setShowVerified(false)} style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
+          <div style={{ position: 'fixed', inset: 0, zIndex: 4001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, pointerEvents: 'none' }}>
+            <div style={{ background: 'var(--surface-1)', borderRadius: 24, padding: '28px 24px', maxWidth: 340, width: '100%', border: `1.5px solid ${Y}40`, pointerEvents: 'auto', textAlign: 'center', boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px', background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 20px rgba(245,158,11,0.4)' }}>
+                <BadgeCheck style={{ width: 34, height: 34, color: '#fff' }} />
+              </div>
+              <p style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-hi)', marginBottom: 8 }}>Verified Driver</p>
+              <p style={{ fontSize: 13, color: 'var(--text-md)', lineHeight: 1.65, marginBottom: 22 }}>
+                {(user?.full_name ?? 'This driver')}'s identity has been verified with their National ID on MOTOFIX. This badge shows mechanics you're a trusted, verified driver on the platform.
+              </p>
+              <button onClick={() => setShowVerified(false)}
+                style={{ width: '100%', height: 46, borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#000', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

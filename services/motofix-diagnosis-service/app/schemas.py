@@ -41,6 +41,11 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="Full conversation history including the latest user message")
+    persona: Optional[str] = Field(
+        "driver",
+        description="'driver' = stressed-driver triage (short, dispatch-oriented); "
+                    "'mechanic' = detailed step-by-step diagnostic & repair guidance for a pro.",
+    )
 
 
 class ChatResponse(BaseModel):

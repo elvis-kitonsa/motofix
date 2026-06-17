@@ -8,7 +8,7 @@ const STEPS = [
   { key: 'accepted',              label: 'Job Accepted',               desc: 'You accepted the job — get ready to head out' },
   { key: 'en_route',              label: 'On the Way',                 desc: "You're on the way to the driver's location" },
   { key: 'arrived',               label: 'Arrived at Location',        desc: "You've reached the driver — assess the situation" },
-  { key: 'service_started',       label: 'Service in Progress',        desc: 'Repair / refuel work is underway' },
+  { key: 'service_started',       label: 'Service in Progress',        desc: 'Service work is underway' },
   { key: 'awaiting_confirmation', label: 'Awaiting Driver Confirmation', desc: 'Driver is confirming the work is complete' },
   { key: 'completed',             label: 'Job Completed',              desc: 'All done — great work!' },
 ]
@@ -44,7 +44,7 @@ interface StatusBarActions {
 // compact Call/Chat/Navigate buttons ride alongside the current step on these.
 const CONTACTABLE = ['accepted', 'en_route', 'arrived', 'service_started', 'awaiting_confirmation']
 
-export default function StatusBar({ status, actions }: { status: string; actions?: StatusBarActions }) {
+export default function StatusBar({ status, actions, serviceDesc }: { status: string; actions?: StatusBarActions; serviceDesc?: string }) {
   const norm = normalizeStatus(status)
   const current = statusIndex(status)
   const color = STEP_COLOR[norm] ?? C.amber
@@ -138,7 +138,8 @@ export default function StatusBar({ status, actions }: { status: string; actions
                     fontSize: 12, color: C.textFaint,
                     marginTop: 3, lineHeight: 1.5,
                   }}>
-                    {step.desc}
+                    {/* The in-progress step shows what's actually being worked on. */}
+                    {step.key === 'service_started' && serviceDesc ? serviceDesc : step.desc}
                   </p>
                 )}
               </div>

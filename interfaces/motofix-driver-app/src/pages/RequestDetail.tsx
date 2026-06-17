@@ -588,6 +588,19 @@ export default function RequestDetail() {
   const etaNearBannerRef = useRef(false);
   const [mechanicPhone, setMechanicPhone] = useState<string | null>(null);
   const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+  // Final-bill payment (mechanic's actual_fee). Cash/MoMo are simulated for the demo;
+  // "paid" is tracked locally per request so the breakdown card reflects it.
+  const [feePaid, setFeePaid] = useState(false);
+  const [showFeePaySheet, setShowFeePaySheet] = useState(false);
+  useEffect(() => {
+    try { setFeePaid(sessionStorage.getItem(`motofix_fee_paid_${id}`) === '1'); } catch {}
+  }, [id]);
+  const markFeePaid = (method: 'momo' | 'cash') => {
+    try { sessionStorage.setItem(`motofix_fee_paid_${id}`, '1'); } catch {}
+    setFeePaid(true);
+    setShowFeePaySheet(false);
+    toast.success(method === 'cash' ? 'Cash payment recorded. Thank you!' : 'Payment successful. Thank you!');
+  };
 
   // Live route info lifted from TrackingMap via callback
   const [liveRoute, setLiveRoute] = useState<{ duration: string; distance: string } | null>(null);
@@ -1213,13 +1226,48 @@ export default function RequestDetail() {
         {request.status === 'en_route' && (() => {
           const win = arrivalWindow(request.en_route_at, request.eta_minutes);
           const pct = Math.round(Math.max(0, Math.min(1, mechProgress)) * 100);
+          // Live ETA + distance — the SAME figures the mechanic sees on their map,
+          // shown here above the loader (not on the map).
+          const eta  = liveRoute?.duration;   // "8 min" | "Arriving"
+          const dist = liveRoute?.distance;   // "3.7 km"
+          const etaParts = eta && eta !== 'Arriving' ? eta.match(/^(\d+)\s*(.*)$/) : null;
+          // Big, bold orange→yellow gradient numerals (matching the dashboard amber).
+          const amberText: React.CSSProperties = {
+            background: 'linear-gradient(135deg, #FBBF24, #F59E0B)',
+            WebkitBackgroundClip: 'text', backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent', color: '#F59E0B',
+          };
           return (
             <div className="animate-slide-up" style={{ padding: '2px 2px 0' }}>
-              <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-hi)', lineHeight: 1.35, marginBottom: 10 }}>
-                {win
-                  ? <>Your mechanic will be there between <span style={{ color: '#F59E0B', fontWeight: 800 }}>{win}</span></>
-                  : 'Estimating your mechanic’s arrival…'}
-              </p>
+              {eta ? (
+                <>
+                  <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-faint)', marginBottom: 3 }}>
+                    Arriving in
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: win ? 4 : 10 }}>
+                    {etaParts ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ ...amberText, fontSize: 48, fontWeight: 900, lineHeight: 0.95, letterSpacing: '-0.03em' }}>{etaParts[1]}</span>
+                        <span style={{ ...amberText, fontSize: 20, fontWeight: 800 }}>{etaParts[2]}</span>
+                      </span>
+                    ) : (
+                      <span style={{ ...amberText, fontSize: 38, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.02em' }}>{eta}</span>
+                    )}
+                    {dist && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-lo)' }}>· {dist} away</span>}
+                  </div>
+                  {win && (
+                    <p style={{ fontSize: 12.5, color: 'var(--text-lo)', marginBottom: 10 }}>
+                      Between <span style={{ color: '#F59E0B', fontWeight: 800 }}>{win}</span>
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-hi)', lineHeight: 1.35, marginBottom: 10 }}>
+                  {win
+                    ? <>Your mechanic will be there between <span style={{ color: '#F59E0B', fontWeight: 800 }}>{win}</span></>
+                    : 'Estimating your mechanic’s arrival…'}
+                </p>
+              )}
               {/* Grey track filling with the route's orange/yellow as the mechanic advances */}
               <div style={{ height: 8, borderRadius: 999, background: 'var(--surface-4)', overflow: 'hidden' }}>
                 <div style={{
@@ -1716,6 +1764,63 @@ export default function RequestDetail() {
           </div>
         )}
 
+        {/* Final bill + Proceed to Pay — appears once the job is confirmed done,
+            just before the rating. Driver pays only after confirming completion. */}
+        {request.status === 'completed' && request.actual_fee != null && (() => {
+          const fixes = (request.service_note ?? '').split(';').map(s => s.trim()).filter(Boolean);
+          const amount = Number(request.actual_fee) || 0;
+          return (
+            <div className="animate-slide-up" style={{
+              borderRadius: 18, padding: '18px 16px', marginBottom: 4,
+              background: feePaid ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.07)',
+              border: `1.5px solid ${feePaid ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.4)'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <CheckCircle2 style={{ width: 18, height: 18, color: feePaid ? '#22C55E' : '#F59E0B' }} />
+                <p style={{ fontSize: 14, fontWeight: 800, color: feePaid ? '#22C55E' : '#F59E0B' }}>
+                  {feePaid ? 'Payment complete' : 'Service complete — payment due'}
+                </p>
+              </div>
+
+              {fixes.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7 }}>What was done</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {fixes.map((f, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <Check style={{ width: 14, height: 14, color: '#22C55E', flexShrink: 0, marginTop: 2 }} />
+                        <span style={{ fontSize: 13, color: 'var(--text-hi)', lineHeight: 1.4 }}>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid var(--border-2)', marginBottom: feePaid ? 0 : 14 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-lo)' }}>Total to pay</span>
+                <span style={{ fontSize: 26, fontWeight: 900, color: '#F59E0B', letterSpacing: '-0.02em' }}>UGX {amount.toLocaleString()}</span>
+              </div>
+
+              {feePaid ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 12.5, color: '#22C55E', fontWeight: 700 }}>
+                  <CheckCircle2 style={{ width: 15, height: 15 }} /> Paid — thank you!
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowFeePaySheet(true)}
+                  style={{
+                    width: '100%', height: 50, borderRadius: 14, border: 'none',
+                    background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#000',
+                    fontWeight: 800, fontSize: 15, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}>
+                  <DollarSign style={{ width: 17, height: 17 }} /> Proceed to Pay
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Rate mechanic CTA — shown when job is completed */}
         {request.status === 'completed' && (
           <div className="animate-slide-up" style={{ animationDelay: '0.20s' }}>
@@ -1969,6 +2074,46 @@ export default function RequestDetail() {
                 </div>
               </div>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Final-bill pay sheet (MoMo / Cash — simulated) ── */}
+      {showFeePaySheet && request?.actual_fee != null && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }} onClick={() => setShowFeePaySheet(false)} />
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 90, maxWidth: 480, margin: '0 auto',
+            borderRadius: '24px 24px 0 0', background: 'var(--overlay-bg)', boxShadow: '0 -12px 60px rgba(0,0,0,0.6)',
+            padding: '20px 20px', paddingBottom: 'max(calc(env(safe-area-inset-bottom, 0px) + 20px), 28px)',
+            animation: 'cancel-slide-up 0.28s cubic-bezier(0.34,1.56,0.64,1)',
+          }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-4)', margin: '0 auto 18px' }} />
+            <p style={{ fontSize: 13, color: 'var(--text-faint)', marginBottom: 2 }}>Total to pay</p>
+            <p style={{ fontSize: 30, fontWeight: 900, color: '#F59E0B', letterSpacing: '-0.02em', marginBottom: 18 }}>UGX {(Number(request.actual_fee) || 0).toLocaleString()}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => markFeePaid('momo')} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, background: 'var(--surface-2)', border: '1.5px solid rgba(245,158,11,0.4)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Smartphone style={{ width: 20, height: 20, color: '#F59E0B' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-hi)' }}>Mobile Money</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-faint)' }}>Pay via MTN / Airtel MoMo</p>
+                </div>
+              </button>
+              <button onClick={() => markFeePaid('cash')} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, background: 'var(--surface-2)', border: '1.5px solid rgba(34,197,94,0.35)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: 'rgba(34,197,94,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <DollarSign style={{ width: 20, height: 20, color: '#22C55E' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-hi)' }}>Cash</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-faint)' }}>Pay the mechanic directly</p>
+                </div>
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', textAlign: 'center', marginTop: 14, lineHeight: 1.5 }}>
+              Demo: the payment is recorded — no real charge is made.
+            </p>
           </div>
         </>
       )}

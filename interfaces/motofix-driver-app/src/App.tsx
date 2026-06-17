@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { MotobotFab } from "@/components/MotobotFab";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { NetworkBanner } from "@/components/NetworkBanner";
+import InactivityGuard from "@/components/InactivityGuard";
 import { RequestProvider } from "@/contexts/RequestContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
@@ -62,6 +63,7 @@ function AppContent() {
     <>
       <NetworkBanner />
       <QuoteModal />
+      <InactivityGuard />
       <Routes>
         <Route path="/" element={<Splash />} />
         <Route path="/welcome" element={<Welcome />} />

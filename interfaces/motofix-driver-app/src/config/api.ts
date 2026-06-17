@@ -299,6 +299,12 @@ export const diagnosisService = {
   diagnoseText: (description: string) =>
     diagnosisApi.post<DiagnosisResult>('/diagnose', { description }),
 
+  /** Rotating, AI-generated home-screen headlines (with built-in fallback). */
+  greeting: (period: string): Promise<string[]> =>
+    diagnosisApi.get<{ messages?: string[] }>('/greetings', { params: { role: 'driver', period } })
+      .then(r => r.data?.messages ?? [])
+      .catch(() => []),
+
   /** Step-by-step guided triage — returns the next question or a final diagnosis */
   guidedDiagnose: (answers: GuidedAnswer[]) =>
     diagnosisApi.post<GuidedResult>('/diagnose/guided', { answers }),

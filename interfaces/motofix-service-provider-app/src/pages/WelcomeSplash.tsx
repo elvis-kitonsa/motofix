@@ -21,11 +21,19 @@ export default function WelcomeSplash() {
   const [msgIdx, setMsgIdx] = useState(0)
   const [phase,  setPhase]  = useState<Phase>('loading')
   const doneFired = useRef(false)
+  const navFired  = useRef(false)
 
   const firstName = user?.full_name?.trim().split(' ')[0] ?? 'Provider'
 
+  // Navigate to the dashboard exactly once — fired when the progress bar fills (below).
+  const goDashboard = () => {
+    if (navFired.current) return
+    navFired.current = true
+    navigate('/dashboard', { replace: true })
+  }
+
   // theme-dependent values
-  const pageBg      = isDark ? '#0c0e18' : 'hsl(220,20%,96%)'
+  const pageBg      = isDark ? '#0c0e18' : '#ffffff'
   const badgeBg     = isDark ? '#0c0e18' : '#ffffff'
   const textHi      = isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.88)'
   const textLo      = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)'
@@ -49,9 +57,12 @@ export default function WelcomeSplash() {
 
   useEffect(() => {
     if (phase !== 'success') return
-    const t = setTimeout(() => navigate('/dashboard', { replace: true }), 2400)
+    // Primary navigation is triggered when the progress bar finishes filling
+    // (onAnimationEnd below). This is just a safety net in case that never fires.
+    const t = setTimeout(goDashboard, 4200)
     return () => clearTimeout(t)
-  }, [phase, navigate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
 
   return (
     <div style={{
@@ -117,20 +128,22 @@ export default function WelcomeSplash() {
             <span style={{ color: AMBER, fontWeight: 700 }}>MOTOFIX</span> network.
           </p>
           <p style={{
-            fontSize: 11, color: textFaint, marginTop: 10,
+            fontSize: 11, color: textLo, marginTop: 26,
             animation: 'ws-slide-up 0.5s ease 1.1s both',
           }}>
-            Taking you to your dashboard…
+            Taking you to your dashboard....
           </p>
           <div style={{
             marginTop: 20, height: 2, width: 120, borderRadius: 99,
             background: `${AMBER}22`, overflow: 'hidden',
-            animation: 'ws-slide-up 0.5s ease 1.4s both',
+            animation: 'ws-slide-up 0.5s ease 1.2s both',
           }}>
             <div style={{
               height: '100%', background: AMBER, borderRadius: 99,
-              animation: 'ws-progress 1.9s linear 1.5s both',
-            }} />
+              animation: 'ws-progress 1.3s linear 1.3s both',
+            }}
+              onAnimationEnd={e => { if (e.animationName === 'ws-progress') goDashboard() }}
+            />
           </div>
         </div>
       )}

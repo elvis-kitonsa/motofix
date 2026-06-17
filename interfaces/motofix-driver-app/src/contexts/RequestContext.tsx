@@ -42,6 +42,8 @@ export interface Request {
   completed_at?: string;
   eta_minutes?: number;
   completion_by?: 'mechanic' | 'driver' | 'system' | null;
+  actual_fee?: number | null;       // final charge the mechanic entered
+  service_note?: string | null;     // what was fixed (the ticked AI fixes, joined)
 }
 
 interface RequestContextValue {

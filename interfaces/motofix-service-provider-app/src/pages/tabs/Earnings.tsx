@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Wallet, AlertTriangle, CheckCircle, Lock, Sparkles, X, Loader2, Info, ShieldCheck,
+  Wallet, AlertTriangle, CheckCircle, Lock, Sparkles, X, Loader2, Info, ShieldCheck, Wrench,
 } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -16,6 +16,20 @@ const Y = '#F59E0B'
 
 function fmtUGX(n: number) {
   return `UGX ${n.toLocaleString('en-UG')}`
+}
+
+function titleCase(s: string) {
+  return s.replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// Date + time of completion in Kampala time, so the mechanic can match the fee to a real job.
+function fmtWhen(iso: string) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'recently'
+  return d.toLocaleString('en-UG', {
+    day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+    timeZone: 'Africa/Kampala',
+  })
 }
 
 export default function Earnings() {
@@ -52,7 +66,7 @@ export default function Earnings() {
 
   const owed     = fees?.owed_amount ?? 0
   const owedJobs = fees?.owed_count ?? 0
-  const cap      = fees?.gate_jobs ?? 5
+  const cap      = fees?.gate_jobs ?? 3
   const perJob   = fees?.fee_per_job ?? 10000
   const gated    = !!fees?.gated
   const locked   = !!fees?.locked
@@ -190,13 +204,13 @@ export default function Earnings() {
           <p style={{ fontSize: 13, fontWeight: 800, color: C.textHi }}>How MOTOFIX charges</p>
         </div>
         <p style={{ fontSize: 12.5, color: C.textMuted, lineHeight: 1.6 }}>
-          A flat <strong style={{ color: Y }}>{fmtUGX(perJob)}</strong> per completed job — the same whether the job is small or large, so the platform never profits from a bigger bill. No monthly subscription; you only pay for jobs you actually earn through MOTOFIX.
+          A flat <strong style={{ color: Y }}>{fmtUGX(perJob)}</strong> is added <strong style={{ color: C.textHi }}>only after a job is completed</strong> — never upfront and never while you're working. It's the same whether the job is small or large, so the platform never profits from a bigger bill, and never touches how the driver pays you (cash or MoMo). No monthly subscription; you only pay for jobs you actually earn through MOTOFIX.
         </p>
       </div>
 
       {/* ── Billed jobs ───────────────────────────────────────── */}
       <p style={{ fontSize: 14, fontWeight: 800, color: C.textHi, marginBottom: 8 }}>Unpaid jobs</p>
-      {(!fees || fees.jobs.length === 0) ? (
+      {(!fees || (fees.jobs?.length ?? 0) === 0) ? (
         <div style={{ textAlign: 'center', padding: '28px 16px', background: 'var(--surface-1)', borderRadius: 16, border: cardBorder }}>
           <CheckCircle style={{ width: 30, height: 30, color: C.green, margin: '0 auto 10px' }} />
           <p style={{ fontSize: 13, fontWeight: 700, color: C.textHi }}>No outstanding fees</p>
@@ -204,23 +218,59 @@ export default function Earnings() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {fees.jobs.map(j => (
-            <div key={j.request_id} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-              background: 'var(--surface-1)', borderRadius: 14, border: cardBorder,
-            }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: `${Y}14`, border: `1px solid ${Y}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Wallet style={{ width: 16, height: 16, color: Y }} />
+          {(fees.jobs ?? []).map(j => {
+            const svc = titleCase((j.service_type || 'Service').replace(/_/g, ' '))
+            const when = j.completed_at || j.created_at
+            const hasDetail = j.job_fee != null || !!j.service_note
+            return (
+              <div key={j.request_id} style={{
+                padding: '12px 14px', background: 'var(--surface-1)', borderRadius: 14, border: cardBorder,
+              }}>
+                {/* Header: which job + the flat fee it incurred */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: `${Y}14`, border: `1px solid ${Y}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Wrench style={{ width: 16, height: 16, color: Y }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.textHi }}>
+                      {svc} · Job #{String(j.request_id).padStart(6, '0')}
+                    </p>
+                    <p style={{ fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+                      {j.customer_name ? `For ${j.customer_name}` : 'Completed job'}
+                    </p>
+                    <p style={{ fontSize: 11, color: C.textFaint, marginTop: 2 }}>
+                      {when ? `Completed ${fmtWhen(when)}` : 'Completed'}
+                    </p>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: Y }}>{fmtUGX(j.amount)}</span>
+                    <p style={{ fontSize: 9.5, color: C.textFaint, marginTop: 1, textTransform: 'uppercase', letterSpacing: '0.06em' }}>fee owed</p>
+                  </div>
+                </div>
+
+                {/* Why this 10k: tie it to what the mechanic actually earned + work note */}
+                {hasDetail && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border-2)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {j.job_fee != null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11.5, color: C.textMuted }}>You charged this job</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.textHi }}>{fmtUGX(j.job_fee)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11.5, color: C.textMuted }}>MOTOFIX platform fee</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: Y }}>{fmtUGX(j.amount)}</span>
+                    </div>
+                    {j.service_note && (
+                      <p style={{ fontSize: 11, color: C.textFaint, lineHeight: 1.5, marginTop: 2 }}>
+                        Work done: {j.service_note}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: C.textHi }}>Job #{String(j.request_id).padStart(6, '0')}</p>
-                <p style={{ fontSize: 11, color: C.textFaint, marginTop: 2 }}>
-                  {j.created_at ? new Date(j.created_at).toLocaleDateString('en-UG', { day: 'numeric', month: 'short' }) : 'Completed'}
-                </p>
-              </div>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: Y, flexShrink: 0 }}>{fmtUGX(j.amount)}</span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

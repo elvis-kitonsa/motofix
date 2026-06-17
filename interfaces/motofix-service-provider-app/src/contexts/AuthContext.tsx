@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from 'react'
 import type { User } from '@/types'
+import { startActivity, clearInactivity } from '@/utils/sessionTimeout'
 
 interface AuthCtx {
   user: User | null
@@ -11,9 +12,14 @@ interface AuthCtx {
 
 const AuthContext = createContext<AuthCtx>({} as AuthCtx)
 
+// Storage-safe helpers — Safari with storage blocked throws; must not crash boot.
+function lsGet(k: string): string | null { try { return localStorage.getItem(k) } catch { return null } }
+function lsSet(k: string, v: string): void { try { localStorage.setItem(k, v) } catch { /* ignore */ } }
+function lsDel(k: string): void { try { localStorage.removeItem(k) } catch { /* ignore */ } }
+
 function readStoredUser(): User | null {
   try {
-    const raw = localStorage.getItem('motofix_sp_user')
+    const raw = lsGet('motofix_sp_user')
     return raw ? (JSON.parse(raw) as User) : null
   } catch {
     return null
@@ -21,21 +27,22 @@ function readStoredUser(): User | null {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem('motofix_sp_token')
-  )
+  const [token, setToken] = useState<string | null>(() => lsGet('motofix_sp_token'))
   const [user, setUser] = useState<User | null>(readStoredUser)
 
   const login = (newToken: string, newUser: User) => {
-    localStorage.setItem('motofix_sp_token', newToken)
-    localStorage.setItem('motofix_sp_user', JSON.stringify(newUser))
+    lsSet('motofix_sp_token', newToken)
+    lsSet('motofix_sp_user', JSON.stringify(newUser))
+    clearInactivity()  // clear any stale inactivity flag
+    startActivity()    // begin the 10-minute idle clock for this session
     setToken(newToken)
     setUser(newUser)
   }
 
   const logout = () => {
-    localStorage.removeItem('motofix_sp_token')
-    localStorage.removeItem('motofix_sp_user')
+    lsDel('motofix_sp_token')
+    lsDel('motofix_sp_user')
+    clearInactivity()
     setToken(null)
     setUser(null)
   }

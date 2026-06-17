@@ -1,17 +1,21 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
+import type { ElementType } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { GoogleMap, useLoadScript, Marker } from '@react-google-maps/api'
+import { useLoadScript } from '@react-google-maps/api'
 import {
-  ArrowLeft, Phone, Star, MapPin, X, Navigation, ShoppingBag,
-  Loader2, ChevronRight, MessageCircle, ReceiptText, Clock, Wrench,
+  ArrowLeft, Search, X, ChevronDown, ShoppingBag, ShoppingCart,
+  Loader2, MessageCircle, ReceiptText, Clock, Sparkles, MapPin, Wrench,
+  CheckCircle2, Truck, Star, CircleDot, Cog, Disc3, Zap, Droplets, Car, Lightbulb,
+  GitBranch, Package,
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { partsService, ProviderPartsOrder } from '@/config/api'
+import { partsService, diagnosisService, type ProviderPartsOrder } from '@/config/api'
 import { toast } from 'sonner'
 
 const LIBS: ('places')[] = ['places']
 const PURPLE = '#A78BFA'
 
+function fmtUGX(n: number) { return `UGX ${Math.round(n).toLocaleString('en-UG')}` }
 function waDigits(raw?: string): string {
   if (!raw) return ''
   let d = raw.replace(/[^\d]/g, '')
@@ -20,314 +24,522 @@ function waDigits(raw?: string): string {
   return d
 }
 
-function Stars({ rating, size = 12 }: { rating: number; size?: number }) {
-  const filled = Math.round(rating)
-  return (
-    <span style={{ display: 'inline-flex', gap: 1 }}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <Star key={i} size={size} style={{ color: '#F59E0B', fill: i <= filled ? '#F59E0B' : 'none' }} />
-      ))}
-    </span>
-  )
-}
+/* ── Catalogue ───────────────────────────────────────────────── */
+type Zone = 'engine' | 'wheel' | 'front' | 'rear' | 'body' | 'whole'
+type Spec = { key: string; label: string; type: 'select' | 'number'; options?: string[] }
+type Item = { id: string; name: string; cat: string; min: number; max: number; zone: Zone; specs: Spec[] }
 
-type Phase = 'locating' | 'scanning' | 'results' | 'empty'
+const CATS: { id: string; label: string; color: string; Icon: ElementType }[] = [
+  { id: 'tyres',      label: 'Tyres & Wheels',     color: '#60A5FA', Icon: CircleDot },
+  { id: 'engine',     label: 'Engine',             color: '#F59E0B', Icon: Cog },
+  { id: 'brakes',     label: 'Brakes',             color: '#F87171', Icon: Disc3 },
+  { id: 'electrical', label: 'Electrical',         color: '#A78BFA', Icon: Zap },
+  { id: 'filters',    label: 'Filters & Fluids',   color: '#38BDF8', Icon: Droplets },
+  { id: 'suspension', label: 'Suspension',         color: '#34D399', Icon: Car },
+  { id: 'body',       label: 'Body & Glass',       color: '#FB923C', Icon: Package },
+  { id: 'lights',     label: 'Lights',             color: '#FBBF24', Icon: Lightbulb },
+  { id: 'fasteners',  label: 'Fasteners',          color: '#9CA3AF', Icon: Wrench },
+]
+
+const QTY: Spec = { key: 'qty', label: 'Quantity', type: 'number' }
+const TYRE_BRANDS = ['Michelin', 'Bridgestone', 'Dunlop', 'Continental', 'Yokohama', 'Maxxis', 'Goodyear', 'Other']
+const PLUG_BRANDS = ['NGK', 'Denso', 'Bosch', 'Other']
+const TYRE_SIZES  = ['175/70 R13', '185/65 R14', '195/65 R15', '205/55 R16', '215/60 R16', '225/65 R17', '265/65 R17', '31x10.5 R15']
+
+const CATALOG: Item[] = [
+  // Tyres & wheels
+  { id: 'tyre',     name: 'Tyre',          cat: 'tyres', min: 120000, max: 400000, zone: 'wheel', specs: [{ key: 'size', label: 'Tyre size', type: 'select', options: TYRE_SIZES }, { key: 'brand', label: 'Brand', type: 'select', options: TYRE_BRANDS }, QTY] },
+  { id: 'rim',      name: 'Alloy Rim',     cat: 'tyres', min: 150000, max: 500000, zone: 'wheel', specs: [{ key: 'size', label: 'Rim size', type: 'select', options: ['13"', '14"', '15"', '16"', '17"', '18"'] }, QTY] },
+  { id: 'tube',     name: 'Inner Tube',    cat: 'tyres', min: 15000,  max: 45000,  zone: 'wheel', specs: [{ key: 'size', label: 'Size', type: 'select', options: TYRE_SIZES }, QTY] },
+  { id: 'wheelnut', name: 'Wheel Nuts',    cat: 'tyres', min: 2000,   max: 12000,  zone: 'wheel', specs: [QTY] },
+  // Engine
+  { id: 'plugs',    name: 'Spark Plugs',   cat: 'engine', min: 8000,  max: 25000,  zone: 'engine', specs: [{ key: 'brand', label: 'Brand', type: 'select', options: PLUG_BRANDS }, QTY] },
+  { id: 'timing',   name: 'Timing Belt Kit', cat: 'engine', min: 90000, max: 300000, zone: 'engine', specs: [QTY] },
+  { id: 'gasket',   name: 'Full Gasket Set', cat: 'engine', min: 80000, max: 300000, zone: 'engine', specs: [QTY] },
+  { id: 'engine',   name: 'Engine (half-cut/complete)', cat: 'engine', min: 1500000, max: 6000000, zone: 'engine', specs: [{ key: 'condition', label: 'Condition', type: 'select', options: ['New', 'Half-cut (used import)', 'Reconditioned'] }, QTY] },
+  { id: 'oil',      name: 'Engine Oil',    cat: 'engine', min: 25000,  max: 90000,  zone: 'engine', specs: [{ key: 'grade', label: 'Viscosity', type: 'select', options: ['5W-30', '10W-40', '15W-40', '20W-50'] }, { key: 'litres', label: 'Litres', type: 'number' }] },
+  // Brakes
+  { id: 'pads',     name: 'Brake Pads',    cat: 'brakes', min: 40000, max: 120000, zone: 'wheel', specs: [{ key: 'pos', label: 'Position', type: 'select', options: ['Front', 'Rear'] }, QTY] },
+  { id: 'discs',    name: 'Brake Discs',   cat: 'brakes', min: 80000, max: 250000, zone: 'wheel', specs: [{ key: 'pos', label: 'Position', type: 'select', options: ['Front', 'Rear'] }, QTY] },
+  { id: 'bfluid',   name: 'Brake Fluid',   cat: 'brakes', min: 12000, max: 35000,  zone: 'engine', specs: [{ key: 'type', label: 'Type', type: 'select', options: ['DOT 3', 'DOT 4'] }, QTY] },
+  // Electrical
+  { id: 'battery',  name: 'Car Battery',   cat: 'electrical', min: 180000, max: 450000, zone: 'front', specs: [{ key: 'size', label: 'Battery size', type: 'select', options: ['NS40', 'NS60', 'NS70', 'N50', 'N70'] }, QTY] },
+  { id: 'alt',      name: 'Alternator',    cat: 'electrical', min: 250000, max: 700000, zone: 'engine', specs: [QTY] },
+  { id: 'starter',  name: 'Starter Motor', cat: 'electrical', min: 200000, max: 550000, zone: 'engine', specs: [QTY] },
+  { id: 'bulb',     name: 'Headlight Bulb', cat: 'electrical', min: 10000, max: 60000, zone: 'front', specs: [{ key: 'type', label: 'Type', type: 'select', options: ['Halogen', 'LED', 'HID/Xenon'] }, QTY] },
+  // Filters & fluids
+  { id: 'oilfilter', name: 'Oil Filter',   cat: 'filters', min: 12000, max: 35000, zone: 'engine', specs: [QTY] },
+  { id: 'airfilter', name: 'Air Filter',   cat: 'filters', min: 15000, max: 45000, zone: 'engine', specs: [QTY] },
+  { id: 'fuelfilter', name: 'Fuel Filter', cat: 'filters', min: 20000, max: 60000, zone: 'engine', specs: [QTY] },
+  { id: 'coolant',  name: 'Coolant',       cat: 'filters', min: 15000, max: 50000, zone: 'engine', specs: [{ key: 'litres', label: 'Litres', type: 'number' }] },
+  // Suspension
+  { id: 'shock',    name: 'Shock Absorber', cat: 'suspension', min: 120000, max: 350000, zone: 'wheel', specs: [{ key: 'pos', label: 'Position', type: 'select', options: ['Front', 'Rear'] }, QTY] },
+  { id: 'tierod',   name: 'Tie Rod End',   cat: 'suspension', min: 40000, max: 120000, zone: 'wheel', specs: [QTY] },
+  { id: 'balljoint', name: 'Ball Joint',   cat: 'suspension', min: 35000, max: 110000, zone: 'wheel', specs: [QTY] },
+  { id: 'cv',       name: 'CV Joint',      cat: 'suspension', min: 80000, max: 220000, zone: 'wheel', specs: [QTY] },
+  // Body & glass
+  { id: 'windscreen', name: 'Windscreen',  cat: 'body', min: 200000, max: 600000, zone: 'front', specs: [QTY] },
+  { id: 'mirror',   name: 'Side Mirror',   cat: 'body', min: 60000, max: 200000, zone: 'body', specs: [{ key: 'side', label: 'Side', type: 'select', options: ['Left', 'Right'] }, QTY] },
+  { id: 'bumper',   name: 'Bumper',        cat: 'body', min: 150000, max: 500000, zone: 'body', specs: [{ key: 'pos', label: 'Position', type: 'select', options: ['Front', 'Rear'] }, QTY] },
+  // Lights
+  { id: 'headlamp', name: 'Headlamp Assembly', cat: 'lights', min: 120000, max: 450000, zone: 'front', specs: [{ key: 'side', label: 'Side', type: 'select', options: ['Left', 'Right'] }, QTY] },
+  { id: 'taillight', name: 'Tail Light',   cat: 'lights', min: 50000, max: 180000, zone: 'rear', specs: [{ key: 'side', label: 'Side', type: 'select', options: ['Left', 'Right'] }, QTY] },
+  { id: 'indicator', name: 'Indicator Bulb', cat: 'lights', min: 3000, max: 15000, zone: 'front', specs: [QTY] },
+  // Fasteners
+  { id: 'bolts',    name: 'Bolt & Nut Assortment', cat: 'fasteners', min: 5000, max: 25000, zone: 'whole', specs: [QTY] },
+  { id: 'screws',   name: 'Self-tapping Screws', cat: 'fasteners', min: 2000, max: 12000, zone: 'whole', specs: [QTY] },
+  { id: 'clamps',   name: 'Hose Clamps',   cat: 'fasteners', min: 3000, max: 15000, zone: 'engine', specs: [QTY] },
+  { id: 'belt',     name: 'Fan / Serpentine Belt', cat: 'engine', min: 25000, max: 90000, zone: 'engine', specs: [QTY] },
+]
+
+/* ── Cars common in Uganda (curated makes + models) ──────────── */
+const CAR_MAKES: { make: string; models: string[] }[] = [
+  { make: 'Toyota',      models: ['Corolla', 'Premio', 'Allion', 'Vitz', 'Wish', 'Harrier', 'Land Cruiser', 'Land Cruiser Prado', 'Hiace', 'Noah', 'Mark X', 'RAV4', 'Ipsum', 'Spacio', 'Succeed', 'Probox', 'Fielder', 'Camry', 'Hilux'] },
+  { make: 'Isuzu',       models: ['D-Max', 'Elf', 'Forward', 'NPR', 'Trooper', 'MU-X', 'Bighorn', 'Wizard'] },
+  { make: 'Mitsubishi',  models: ['Pajero', 'Canter', 'L200', 'Outlander', 'Lancer', 'Fuso', 'RVR', 'Galant'] },
+  { make: 'Nissan',      models: ['X-Trail', 'Note', 'Wingroad', 'Caravan', 'Navara', 'Sunny', 'Patrol', 'Tiida', 'AD Van'] },
+  { make: 'Subaru',      models: ['Forester', 'Outback', 'Legacy', 'Impreza', 'Exiga'] },
+  { make: 'Mercedes-Benz', models: ['C-Class', 'E-Class', 'S-Class', 'ML', 'GLE', 'Sprinter', 'Actros', 'Vito'] },
+  { make: 'Honda',       models: ['Fit', 'CR-V', 'Civic', 'Stream', 'Insight', 'Stepwagon'] },
+  { make: 'Mazda',       models: ['Demio', 'Axela', 'CX-5', 'Bongo', 'Atenza', 'Familia'] },
+  { make: 'Volkswagen',  models: ['Golf', 'Passat', 'Touareg', 'Polo'] },
+  { make: 'Land Rover',  models: ['Defender', 'Discovery', 'Range Rover', 'Freelander'] },
+  { make: 'Suzuki',      models: ['Alto', 'Swift', 'Escudo', 'Every', 'Vitara'] },
+  { make: 'BMW',         models: ['3 Series', '5 Series', 'X3', 'X5', '7 Series'] },
+  { make: 'Hyundai',     models: ['Tucson', 'Santa Fe', 'Elantra', 'ix35', 'H1'] },
+  { make: 'Kia',         models: ['Sportage', 'Sorento', 'Rio', 'Picanto'] },
+  { make: 'Ford',        models: ['Ranger', 'Everest', 'Focus'] },
+  { make: 'Other',       models: [] },
+]
+
+/* Real 3D car (three.js) — lazy-loaded so three.js stays OUT of the eagerly-imported
+   app bundle and only downloads when a part is opened. */
+const Car3D = lazy(() => import('@/components/Car3D'))
+
+type Step = 'shop' | 'configure' | 'searching' | 'suppliers'
+type Cfg = Record<string, string>
+type Supplier = { name: string; vicinity?: string; rating?: number; phone?: string; place_id?: string }
 
 export default function SpareParts() {
   const navigate = useNavigate()
   const { isDark } = useTheme()
 
-  const mapRef = useRef<google.maps.Map | null>(null)
-  const svcRef = useRef<google.maps.places.PlacesService | null>(null)
+  const [step, setStep]       = useState<Step>('shop')
+  const [query, setQuery]     = useState('')
+  const [catFilter, setCatFilter] = useState('All')
+  const [item, setItem]       = useState<Item | null>(null)
+  const [cfg, setCfg]         = useState<Cfg>({})
+  const [makeOpen, setMakeOpen] = useState(false)
 
-  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null)
-  const [phase, setPhase] = useState<Phase>('locating')
-  const [dealers, setDealers] = useState<google.maps.places.PlaceResult[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<google.maps.places.PlaceResult | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [note, setNote] = useState('')
+  const [aiPrice, setAiPrice] = useState<{ min: number; max: number } | null>(null)
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [dispatched, setDispatched] = useState<Supplier | null>(null)
+
   const [ordersOpen, setOrdersOpen] = useState(false)
   const [orders, setOrders] = useState<ProviderPartsOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
 
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
-    libraries: LIBS,
-  })
+  const posRef = useRef<{ lat: number; lng: number } | null>(null)
+  const { isLoaded } = useLoadScript({ googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '', libraries: LIBS })
 
   useEffect(() => {
-    if (!('geolocation' in navigator)) { setPhase('empty'); return }
+    if (!('geolocation' in navigator)) return
     navigator.geolocation.getCurrentPosition(
-      p => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => { toast.error('Enable location to find dealers near you'); setPhase('empty') },
-      { enableHighAccuracy: true, timeout: 10000 },
+      p => { posRef.current = { lat: p.coords.latitude, lng: p.coords.longitude } },
+      () => {}, { enableHighAccuracy: true, timeout: 8000 },
     )
   }, [])
 
-  const handleMapLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map
-    svcRef.current = new google.maps.places.PlacesService(map)
-    if (!pos) return
-    setPhase('scanning')
-    svcRef.current.nearbySearch(
-      { location: pos, radius: 6000, keyword: 'auto parts spares tools', type: 'auto_parts_store' },
-      (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results?.length) {
-          setDealers(results); setPhase('results')
-        } else { setPhase('empty') }
-      },
-    )
-  }, [pos])
+  // theme tokens
+  const surface  = 'var(--surface-1)'
+  const textHi   = 'var(--text-hi)'
+  const textMd   = 'var(--text-md)'
+  const textLo   = 'var(--text-dim)'
+  const border   = isDark ? '1.5px solid rgba(255,255,255,0.20)' : '1.5px solid rgba(0,0,0,0.65)'
+  const qty = Math.max(1, Number(cfg.qty || cfg.litres || 1))
 
-  const openDealer = useCallback((place: google.maps.places.PlaceResult) => {
-    if (!place.place_id) return
-    setSelectedId(place.place_id)
-    setDetail(place)
-    setNote('')
-    setDetailLoading(true)
-    setSheetOpen(true)
-    svcRef.current?.getDetails(
-      { placeId: place.place_id, fields: ['name', 'rating', 'user_ratings_total', 'formatted_address', 'formatted_phone_number', 'opening_hours', 'website', 'url', 'geometry'] },
-      (result, status) => {
-        setDetailLoading(false)
-        if (status === google.maps.places.PlacesServiceStatus.OK && result) setDetail(result)
-      },
-    )
-  }, [])
+  const filtered = CATALOG.filter(it => {
+    if (catFilter !== 'All' && it.cat !== catFilter) return false
+    if (query.length > 1) {
+      const q = query.toLowerCase()
+      const catLabel = CATS.find(c => c.id === it.cat)?.label ?? ''
+      return it.name.toLowerCase().includes(q) || catLabel.toLowerCase().includes(q)
+    }
+    return true
+  })
 
-  const closeSheet = () => { setSheetOpen(false); setSelectedId(null); setDetail(null); setNote('') }
+  const openItem = (it: Item) => {
+    setItem(it)
+    const init: Cfg = {}
+    it.specs.forEach(s => { if (s.key === 'qty' || s.key === 'litres') init[s.key] = '1' })
+    setCfg(init)
+    setAiPrice(null)
+    setStep('configure')
+  }
 
-  const placeOrder = useCallback(() => {
-    const phone = detail?.formatted_phone_number
+  const makeObj = CAR_MAKES.find(m => m.make === cfg.make)
+  const requiredFilled = !!item && item.specs.every(s => s.type === 'number' || cfg[s.key]) && !!cfg.make && !!cfg.model
+
+  const partString = useCallback(() => {
+    if (!item) return ''
+    const bits = item.specs.filter(s => s.key !== 'qty' && s.key !== 'litres' && cfg[s.key]).map(s => cfg[s.key])
+    const car = [cfg.make, cfg.model].filter(Boolean).join(' ')
+    return `${bits.join(' ')} ${item.name}${car ? ` for ${car}` : ''}`.replace(/\s+/g, ' ').trim()
+  }, [item, cfg])
+
+  // Proceed to checkout: fetch AI price + search nearby suppliers behind the animation.
+  const proceed = useCallback(async () => {
+    if (!item) return
+    setStep('searching')
+    setSuppliers([])
+    setDispatched(null)
+
+    // 1) AI price (per-unit) — fall back to the catalogue range if unavailable.
+    let unit = { min: item.min, max: item.max }
+    try {
+      const res = await diagnosisService.partsPrice([partString()])
+      const p = res.data.items?.[0]
+      if (p && (p.price_min || p.price_max)) unit = { min: p.price_min || item.min, max: p.price_max || item.max }
+    } catch { /* keep catalogue range */ }
+    setAiPrice(unit)
+
+    // 2) Nearby suppliers via Places (the real "suppliers in your area").
+    const found: Supplier[] = []
+    try {
+      if (isLoaded && posRef.current && window.google?.maps?.places) {
+        const svc = new google.maps.places.PlacesService(document.createElement('div'))
+        await new Promise<void>(resolve => {
+          svc.nearbySearch(
+            { location: posRef.current!, radius: 7000, keyword: 'auto spare parts', type: 'auto_parts_store' },
+            (results, status) => {
+              if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                results.slice(0, 6).forEach(r => found.push({ name: r.name || 'Dealer', vicinity: r.vicinity, rating: r.rating, place_id: r.place_id }))
+              }
+              resolve()
+            },
+          )
+        })
+      }
+    } catch { /* ignore */ }
+
+    // Keep the search animation visible for a beat, then reveal.
+    await new Promise(r => setTimeout(r, 1700))
+    setSuppliers(found)
+    setStep('suppliers')
+  }, [item, isLoaded, partString])
+
+  // Totals (incl. delivery & transport).
+  const DELIVERY = { min: 5000, max: 20000 }
+  const total = aiPrice ? { min: aiPrice.min * qty + DELIVERY.min, max: aiPrice.max * qty + DELIVERY.max } : null
+
+  const dispatchTo = useCallback((s: Supplier) => {
+    if (!item || !total) return
     const lines = [
-      `Hello${detail?.name ? ' ' + detail.name : ''}, I'm a MOTOFIX service provider. I'd like to order tools / spare parts:`,
+      `Hello${s.name ? ' ' + s.name : ''}, I'm on MOTOFIX and I'd like to order a spare part:`,
       '',
-      note.trim() ? note.trim() : '(items to confirm)',
+      `• ${partString()}`,
+      `• Quantity: ${qty}`,
+      `• Estimated total (incl. delivery): ${fmtUGX(total.min)} – ${fmtUGX(total.max)}`,
     ]
-    if (pos) lines.push('', `My location: https://maps.google.com/?q=${pos.lat},${pos.lng}`)
-    lines.push('', 'Are these available, and what is the total cost?')
+    if (posRef.current) lines.push('', `Deliver to: https://maps.google.com/?q=${posRef.current.lat},${posRef.current.lng}`)
+    lines.push('', 'Is this available, and what is your best price + delivery?')
     const text = encodeURIComponent(lines.join('\n'))
-    const digits = waDigits(phone)
+    const digits = waDigits(s.phone)
     window.open(digits ? `https://wa.me/${digits}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
 
     partsService.createOrder({
-      fault_label: note.trim() || 'Tools / spare parts',
-      parts: [],
-      dealer_name: detail?.name ?? null,
-      dealer_phone: phone ?? null,
-      dealer_place_id: detail?.place_id ?? selectedId ?? null,
-    })
-      .then(() => toast.success('Order saved to your history'))
-      .catch(() => { /* non-fatal */ })
-    closeSheet()
-  }, [detail, note, pos, selectedId])
+      fault_label: `${partString()} ×${qty}`,
+      parts: [{ name: partString(), price_min: total.min, price_max: total.max, qty }],
+      dealer_name: s.name ?? null,
+      dealer_phone: s.phone ?? null,
+      dealer_place_id: s.place_id ?? null,
+    }).then(() => toast.success('Order sent & saved to your history')).catch(() => {})
+    setDispatched(s)
+  }, [item, total, qty, partString])
 
   const openOrders = () => {
-    setOrdersOpen(true)
-    setOrdersLoading(true)
-    partsService.listOrders()
-      .then(r => setOrders(r.data || []))
-      .catch(() => setOrders([]))
-      .finally(() => setOrdersLoading(false))
+    setOrdersOpen(true); setOrdersLoading(true)
+    partsService.listOrders().then(r => setOrders(r.data || [])).catch(() => setOrders([])).finally(() => setOrdersLoading(false))
   }
 
-  // ── theme ──
-  const surface = isDark ? '#111827' : '#ffffff'
-  const surface2 = isDark ? '#0b0f17' : '#f5f6fa'
-  const textHi = isDark ? '#f9fafb' : '#111827'
-  const textMd = isDark ? '#d1d5db' : '#374151'
-  const textLo = isDark ? '#9ca3af' : '#6b7280'
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'
-  const noApiKey = !import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  const catColor = (id: string) => CATS.find(c => c.id === id)?.color ?? PURPLE
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: surface2, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'var(--bg)', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' }}>
+      <style>{`
+        @keyframes sp-spin { to { transform: rotate(360deg); } }
+        @keyframes sp-rotate { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
+        @keyframes sp-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes sp-ring { 0% { transform: scale(0.8); opacity: 0.6; } 100% { transform: scale(2); opacity: 0; } }
+        .sp-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,0.14) !important; }
+        .sp-card { transition: transform 0.16s ease, box-shadow 0.16s ease; }
+        .sp-row:hover { background: var(--surface-3) !important; }
+      `}</style>
+
       {/* Header */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 40,
-        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-        background: isDark ? 'rgba(17,24,39,0.9)' : 'rgba(255,255,255,0.93)',
-        backdropFilter: 'blur(14px)', borderBottom: `1px solid ${border}`,
-      }}>
-        <button onClick={() => navigate(-1)} style={{
-          width: 36, height: 36, borderRadius: 10, flexShrink: 0, border: 'none', cursor: 'pointer',
-          background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)', color: textHi,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}><ArrowLeft size={18} /></button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'var(--header-bg)', borderBottom: '1px solid var(--border-2)', flexShrink: 0, paddingTop: 'max(14px, env(safe-area-inset-top, 14px))' }}>
+        <button onClick={() => { if (step === 'configure') setStep('shop'); else if (step === 'suppliers' || step === 'searching') setStep('configure'); else navigate(-1) }}
+          style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, border: '1px solid var(--border-2)', cursor: 'pointer', background: 'var(--surface-2)', color: textHi, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ArrowLeft size={18} />
+        </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: textHi }}>Spare Parts & Tools</div>
-          <div style={{ fontSize: 11, color: textLo }}>Order equipment from nearby dealers</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: textHi }}>Spare Parts Shop</div>
+          <div style={{ fontSize: 11, color: textLo }}>Order genuine & quality parts for your car</div>
         </div>
-        <button onClick={openOrders} title="My orders" style={{
-          width: 34, height: 34, borderRadius: 10, flexShrink: 0, border: 'none', cursor: 'pointer',
-          background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)', color: textHi,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}><ReceiptText size={16} /></button>
+        <button onClick={openOrders} title="My orders" style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, border: '1px solid var(--border-2)', cursor: 'pointer', background: 'var(--surface-2)', color: textHi, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ReceiptText size={16} />
+        </button>
       </div>
 
-      {/* Map */}
-      {loadError || noApiKey ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32, marginTop: 60 }}>
-          <ShoppingBag size={36} style={{ color: PURPLE, opacity: 0.5 }} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: textHi }}>Map unavailable</div>
-        </div>
-      ) : !isLoaded || !pos ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Loader2 size={32} style={{ color: PURPLE, animation: 'sp-spin 1s linear infinite' }} />
-        </div>
-      ) : (
-        <GoogleMap
-          mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={pos}
-          zoom={14}
-          options={{ disableDefaultUI: true, gestureHandling: 'greedy', clickableIcons: false }}
-          onLoad={handleMapLoad}
-        >
-          <Marker position={pos} zIndex={100} />
-          {dealers.map(d => {
-            if (!d.geometry?.location) return null
-            const p = { lat: d.geometry.location.lat(), lng: d.geometry.location.lng() }
-            return <Marker key={d.place_id} position={p} onClick={() => openDealer(d)} />
-          })}
-        </GoogleMap>
-      )}
-
-      {/* Scanning overlay */}
-      {(phase === 'scanning' || phase === 'locating') && (isLoaded || phase === 'locating') && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)' }}>
-          <div style={{ background: surface, borderRadius: 20, padding: '28px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-            <Loader2 size={28} style={{ color: PURPLE, animation: 'sp-spin 1s linear infinite' }} />
-            <div style={{ fontSize: 13, color: textMd }}>{phase === 'locating' ? 'Finding your location…' : 'Scanning nearby dealers…'}</div>
+      {/* ── SHOP ─────────────────────────────────────────────── */}
+      {step === 'shop' && (
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
+          {/* Search */}
+          <div style={{ padding: '12px 16px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--surface-2)', borderRadius: 14, border: '1px solid var(--border-2)', padding: '10px 14px' }}>
+              <Search size={16} style={{ color: textLo }} />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search parts — tyres, battery, brake pads…"
+                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: textHi, fontSize: 14 }} />
+              {query && <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={15} style={{ color: textLo }} /></button>}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Empty */}
-      {phase === 'empty' && (
-        <div style={{ position: 'absolute', bottom: 28, left: 16, right: 16, zIndex: 30, background: surface, borderRadius: 18, padding: '22px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center', border: `1px solid ${border}` }}>
-          <ShoppingBag size={30} style={{ color: textLo }} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: textHi }}>No dealers found nearby</div>
-          <button onClick={() => navigate(-1)} style={{ padding: '10px 26px', borderRadius: 12, background: PURPLE, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff' }}>Go Back</button>
-        </div>
-      )}
-
-      {/* Dealer list tray */}
-      {phase === 'results' && !sheetOpen && !ordersOpen && (
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20, background: surface, borderRadius: '22px 22px 0 0', boxShadow: '0 -8px 32px rgba(0,0,0,0.18)', maxHeight: '46vh', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '10px 0 2px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: 40, height: 4, borderRadius: 2, background: isDark ? '#374151' : '#e5e7eb' }} />
+          {/* Category chips */}
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', padding: '4px 16px 10px' }}>
+            {['All', ...CATS.map(c => c.id)].map(c => {
+              const lbl = c === 'All' ? 'All' : CATS.find(x => x.id === c)!.label
+              const on = catFilter === c
+              return (
+                <button key={c} onClick={() => setCatFilter(c)} style={{ flexShrink: 0, padding: '6px 13px', borderRadius: 20, background: on ? PURPLE : 'var(--surface-2)', border: on ? 'none' : '1px solid var(--border-2)', color: on ? '#fff' : textMd, fontSize: 12, fontWeight: on ? 800 : 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>{lbl}</button>
+              )
+            })}
           </div>
-          <div style={{ padding: '6px 16px 10px', fontSize: 13, fontWeight: 700, color: textHi }}>{dealers.length} Dealers Nearby</div>
-          <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 20 }}>
-            {dealers.map((d, idx) => (
-              <button key={d.place_id} onClick={() => openDealer(d)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: idx < dealers.length - 1 ? `1px solid ${border}` : 'none' }}>
-                <div style={{ width: 42, height: 42, borderRadius: 14, flexShrink: 0, background: `${PURPLE}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ShoppingBag size={18} style={{ color: PURPLE }} />
+          {/* List — wide rows, no icons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: '4px 16px 32px' }}>
+            {filtered.map(it => {
+              const col = catColor(it.cat)
+              const catLabel = CATS.find(c => c.id === it.cat)?.label ?? ''
+              return (
+                <div key={it.id} className="sp-card" onClick={() => openItem(it)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, background: surface, borderRadius: 14, border, padding: '15px 16px', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: col, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: textHi, fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>{it.name}</p>
+                    <p style={{ color: textLo, fontSize: 10.5, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>{catLabel}</p>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <p style={{ color: col, fontSize: 14, fontWeight: 800 }}>{fmtUGX(it.min)} – {fmtUGX(it.max)}</p>
+                    <p style={{ color: textLo, fontSize: 9.5, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>est. range</p>
+                  </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: textHi, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
-                  {d.rating != null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                      <Stars rating={d.rating} size={11} />
-                      <span style={{ fontSize: 11, color: '#F59E0B', fontWeight: 700 }}>{d.rating.toFixed(1)}</span>
+              )
+            })}
+            {filtered.length === 0 && <p style={{ textAlign: 'center', color: textLo, fontSize: 13, padding: 24 }}>No parts match "{query}".</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIGURE ────────────────────────────────────────── */}
+      {step === 'configure' && item && (() => {
+        const col = catColor(item.cat)
+        return (
+          <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '16px 16px 120px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 13, background: `${col}18`, border: `1.5px solid ${col}38`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {(() => { const I = CATS.find(c => c.id === item.cat)?.Icon ?? Package; return <I size={22} style={{ color: col }} /> })()}
+              </div>
+              <div>
+                <p style={{ color: textHi, fontWeight: 900, fontSize: 17 }}>{item.name}</p>
+                <p style={{ color: col, fontSize: 12.5, fontWeight: 800 }}>{fmtUGX(item.min)} – {fmtUGX(item.max)} <span style={{ color: textLo, fontWeight: 600 }}>· before quote</span></p>
+              </div>
+            </div>
+
+            {/* Animated car skeleton */}
+            <div style={{ borderRadius: 18, border, background: surface, padding: '8px 8px 4px', marginBottom: 16 }}>
+              <Suspense fallback={<div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 size={22} style={{ color: col, animation: 'sp-spin 0.9s linear infinite' }} /></div>}>
+                <Car3D zone={item.zone} color={col} />
+              </Suspense>
+              <p style={{ textAlign: 'center', color: textLo, fontSize: 11, paddingBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Sparkles size={12} style={{ color: col }} /> Rotating 3D view — the glowing part is what you're buying
+              </p>
+            </div>
+
+            {/* Spec questions */}
+            <p style={{ color: textLo, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 10 }}>Tell us what you need</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18 }}>
+              {item.specs.map(s => (
+                <div key={s.key}>
+                  <label style={{ color: textMd, fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>{s.label}</label>
+                  {s.type === 'select' ? (
+                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                      {s.options!.map(opt => {
+                        const on = cfg[s.key] === opt
+                        return <button key={opt} onClick={() => setCfg(c => ({ ...c, [s.key]: opt }))} style={{ padding: '8px 13px', borderRadius: 11, background: on ? col : 'var(--surface-2)', border: on ? 'none' : '1px solid var(--border-2)', color: on ? '#000' : textMd, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer' }}>{opt}</button>
+                      })}
                     </div>
+                  ) : (
+                    <input type="number" min={1} value={cfg[s.key] ?? '1'} onChange={e => setCfg(c => ({ ...c, [s.key]: e.target.value }))}
+                      style={{ width: 110, background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 11, padding: '9px 12px', color: textHi, fontSize: 14, outline: 'none' }} />
                   )}
-                  {d.vicinity && <div style={{ fontSize: 11, color: textLo, marginTop: 1 }}>{d.vicinity}</div>}
                 </div>
-                <ChevronRight size={16} style={{ color: textLo, flexShrink: 0 }} />
+              ))}
+            </div>
+
+            {/* Car make */}
+            <p style={{ color: textLo, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 10 }}>For which car?</p>
+            <div style={{ position: 'relative', marginBottom: cfg.make ? 14 : 4 }}>
+              <button onClick={() => setMakeOpen(o => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border-2)', cursor: 'pointer', color: cfg.make ? textHi : textLo, fontSize: 14, fontWeight: cfg.make ? 700 : 500 }}>
+                {cfg.make || 'Select car make'}
+                <ChevronDown size={17} style={{ color: textLo, transform: makeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
               </button>
-            ))}
-          </div>
-        </div>
-      )}
+              {makeOpen && (
+                <div style={{ position: 'absolute', top: 50, left: 0, right: 0, zIndex: 20, maxHeight: 260, overflowY: 'auto', background: 'var(--overlay-bg)', border: '1px solid var(--border-3)', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.4)' }}>
+                  {CAR_MAKES.map(m => (
+                    <button key={m.make} className="sp-row" onClick={() => { setCfg(c => ({ ...c, make: m.make, model: '' })); setMakeOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '11px 14px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-1)', cursor: 'pointer', color: textHi, fontSize: 13.5, fontWeight: 600 }}>{m.make}</button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-      {/* Dealer detail sheet */}
-      {sheetOpen && (
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 45, background: surface, borderRadius: '24px 24px 0 0', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 -16px 56px rgba(0,0,0,0.32)' }}>
-          <div style={{ position: 'relative', height: 92, background: `linear-gradient(135deg, ${PURPLE}60, #6D28D9)`, borderRadius: '24px 24px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ShoppingBag size={36} style={{ color: 'rgba(255,255,255,0.6)' }} />
-            <button onClick={closeSheet} style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={15} /></button>
-          </div>
-          <div style={{ padding: '18px 16px 36px' }}>
-            {detailLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Loader2 size={26} style={{ color: PURPLE, animation: 'sp-spin 1s linear infinite' }} /></div>
-            ) : (
-              <>
-                <h2 style={{ fontSize: 18, fontWeight: 800, color: textHi, margin: '0 0 6px' }}>{detail?.name ?? '—'}</h2>
-                {detail?.rating != null && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                    <Stars rating={detail.rating} size={13} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>{detail.rating.toFixed(1)}</span>
-                    {detail.user_ratings_total != null && <span style={{ fontSize: 12, color: textLo }}>({detail.user_ratings_total} reviews)</span>}
+            {/* AI-matched models */}
+            {cfg.make && (
+              <div style={{ animation: 'sp-fade 0.3s ease both', marginBottom: 8 }}>
+                <p style={{ color: textMd, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <Sparkles size={13} style={{ color: col }} /> MOTOBOT matched these {cfg.make} models — pick yours
+                </p>
+                {cfg.make === 'Other' || (makeObj && makeObj.models.length === 0) ? (
+                  <input value={cfg.model ?? ''} onChange={e => setCfg(c => ({ ...c, model: e.target.value }))} placeholder="Type your car model"
+                    style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 11, padding: '10px 13px', color: textHi, fontSize: 14, outline: 'none' }} />
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {makeObj!.models.map(md => {
+                      const on = cfg.model === md
+                      return <button key={md} onClick={() => setCfg(c => ({ ...c, model: md }))} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 13px', borderRadius: 11, background: on ? col : 'var(--surface-2)', border: on ? 'none' : '1px solid var(--border-2)', color: on ? '#000' : textMd, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer' }}>
+                        {on && <CheckCircle2 size={13} />}{md}
+                      </button>
+                    })}
                   </div>
                 )}
-                {detail?.formatted_address && (
-                  <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', marginBottom: 14 }}>
-                    <MapPin size={14} style={{ color: PURPLE, flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ fontSize: 13, color: textMd, lineHeight: 1.5 }}>{detail.formatted_address}</span>
-                  </div>
-                )}
-
-                {/* Order note */}
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: textHi, marginBottom: 6 }}>What do you need?</div>
-                  <textarea
-                    value={note}
-                    onChange={e => setNote(e.target.value)}
-                    rows={2}
-                    placeholder="e.g. Socket wrench set, 2L brake fluid, spark plugs ×4"
-                    style={{ width: '100%', boxSizing: 'border-box', resize: 'none', borderRadius: 12, padding: '10px 12px', fontSize: 13, color: textHi, background: surface2, border: `1.5px solid ${border}`, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                </div>
-
-                <button onClick={placeOrder} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px 0', borderRadius: 14, border: 'none', cursor: 'pointer', background: '#25D366', color: '#fff', fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-                  <MessageCircle size={17} /> Order via WhatsApp
-                </button>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {detail?.formatted_phone_number && (
-                    <a href={`tel:${detail.formatted_phone_number.replace(/[\s\-()]/g, '')}`} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px 0', borderRadius: 12, background: `${PURPLE}15`, border: `1.5px solid ${PURPLE}55`, color: PURPLE, textDecoration: 'none', fontSize: 13, fontWeight: 700 }}>
-                      <Phone size={15} /> Call
-                    </a>
-                  )}
-                  {detail?.url && (
-                    <a href={detail.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px 0', borderRadius: 12, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', border: `1.5px solid ${border}`, color: textMd, textDecoration: 'none', fontSize: 13, fontWeight: 700 }}>
-                      <Navigation size={15} /> Directions
-                    </a>
-                  )}
-                </div>
-              </>
+              </div>
             )}
           </div>
+        )
+      })()}
+
+      {/* Configure footer CTA */}
+      {step === 'configure' && item && (
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 16px', paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))', background: 'var(--header-bg)', borderTop: '1px solid var(--border-2)' }}>
+          <button onClick={proceed} disabled={!requiredFilled}
+            style={{ width: '100%', height: 52, borderRadius: 15, border: 'none', cursor: requiredFilled ? 'pointer' : 'not-allowed', background: requiredFilled ? `linear-gradient(135deg, ${PURPLE}, #7C3AED)` : 'var(--surface-3)', color: requiredFilled ? '#fff' : 'var(--text-ghost)', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+            <ShoppingCart size={18} /> {requiredFilled ? 'Proceed to Checkout' : 'Choose options & car first'}
+          </button>
         </div>
       )}
 
-      {/* Orders history sheet */}
+      {/* ── SEARCHING animation ──────────────────────────────── */}
+      {step === 'searching' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22, padding: 32 }}>
+          <div style={{ position: 'relative', width: 96, height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {[0, 1, 2].map(i => <div key={i} style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `1.5px solid ${PURPLE}`, animation: `sp-ring 1.8s ${i * 0.5}s ease-out infinite` }} />)}
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: `${PURPLE}18`, border: `1.5px solid ${PURPLE}55`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Truck size={28} style={{ color: PURPLE }} />
+            </div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ color: textHi, fontWeight: 900, fontSize: 18, marginBottom: 6 }}>Finding suppliers near you…</p>
+            <p style={{ color: textLo, fontSize: 13, lineHeight: 1.6, maxWidth: 280 }}>MOTOBOT is pricing your part and matching it with spare-parts suppliers in your area.</p>
+          </div>
+          <Loader2 size={22} style={{ color: PURPLE, animation: 'sp-spin 0.9s linear infinite' }} />
+        </div>
+      )}
+
+      {/* ── SUPPLIERS / dispatch ─────────────────────────────── */}
+      {step === 'suppliers' && item && total && (
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '16px 16px 32px' }}>
+          {dispatched ? (
+            <div style={{ textAlign: 'center', padding: '40px 12px', animation: 'sp-fade 0.3s ease both' }}>
+              <div style={{ width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px', background: 'rgba(34,197,94,0.14)', border: '1.5px solid rgba(34,197,94,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle2 size={36} style={{ color: '#22c55e' }} />
+              </div>
+              <p style={{ color: textHi, fontWeight: 900, fontSize: 19, marginBottom: 8 }}>Request sent</p>
+              <p style={{ color: textMd, fontSize: 13.5, lineHeight: 1.65, marginBottom: 22, maxWidth: 300, marginLeft: 'auto', marginRight: 'auto' }}>
+                Your order for <strong style={{ color: textHi }}>{partString()}</strong> (×{qty}) was sent to <strong style={{ color: textHi }}>{dispatched.name}</strong>. They'll confirm availability and final price. It's saved in your orders.
+              </p>
+              <button onClick={() => { setStep('shop'); setItem(null) }} style={{ width: '100%', maxWidth: 280, height: 48, borderRadius: 14, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${PURPLE}, #7C3AED)`, color: '#fff', fontWeight: 800, fontSize: 14.5 }}>Back to Shop</button>
+            </div>
+          ) : (
+            <>
+              {/* Order summary */}
+              <div style={{ borderRadius: 18, border, background: surface, padding: '16px', marginBottom: 16 }}>
+                <p style={{ color: textHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{partString()}</p>
+                <p style={{ color: textLo, fontSize: 12, marginBottom: 12 }}>Quantity: {qty}</p>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px dashed var(--border-2)' }}>
+                  <div>
+                    <p style={{ color: textLo, fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}><Sparkles size={11} style={{ color: PURPLE }} /> MOTOBOT estimate · incl. delivery</p>
+                    <p style={{ color: PURPLE, fontWeight: 900, fontSize: 20, marginTop: 3 }}>{fmtUGX(total.min)} – {fmtUGX(total.max)}</p>
+                  </div>
+                  <span style={{ fontSize: 10.5, color: textLo, display: 'flex', alignItems: 'center', gap: 4 }}><Truck size={12} /> +{fmtUGX(DELIVERY.min)}–{fmtUGX(DELIVERY.max)} transport</span>
+                </div>
+              </div>
+
+              <p style={{ color: textLo, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 10 }}>
+                {suppliers.length > 0 ? `${suppliers.length} supplier${suppliers.length === 1 ? '' : 's'} found nearby` : 'Send your request'}
+              </p>
+
+              {suppliers.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {suppliers.map((s, i) => (
+                    <div key={i} className="sp-card" onClick={() => dispatchTo(s)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 15, border, background: surface, cursor: 'pointer' }}>
+                      <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: `${PURPLE}18`, border: `1.5px solid ${PURPLE}38`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ShoppingBag size={19} style={{ color: PURPLE }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: textHi, fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                          {s.rating != null && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#F59E0B', fontWeight: 700 }}><Star size={11} style={{ fill: '#F59E0B' }} /> {s.rating.toFixed(1)}</span>}
+                          {s.vicinity && <span style={{ fontSize: 11, color: textLo, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.vicinity}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#25D366', fontSize: 12, fontWeight: 800, flexShrink: 0 }}><MessageCircle size={15} /> Send</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ borderRadius: 16, border, background: surface, padding: '18px 16px', textAlign: 'center' }}>
+                  <MapPin size={26} style={{ color: textLo, margin: '0 auto 10px' }} />
+                  <p style={{ color: textHi, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>No nearby suppliers detected</p>
+                  <p style={{ color: textLo, fontSize: 12, marginBottom: 14 }}>You can still send your request out on WhatsApp and we'll save it.</p>
+                  <button onClick={() => dispatchTo({ name: 'a nearby supplier' })} style={{ width: '100%', height: 46, borderRadius: 13, border: 'none', cursor: 'pointer', background: '#25D366', color: '#fff', fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><MessageCircle size={16} /> Send request on WhatsApp</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Orders history */}
       {ordersOpen && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: surface2, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: surface, borderBottom: `1px solid ${border}` }}>
-            <button onClick={() => setOrdersOpen(false)} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', cursor: 'pointer', background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)', color: textHi, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ArrowLeft size={18} /></button>
-            <div style={{ fontSize: 15, fontWeight: 700, color: textHi }}>My Orders</div>
+        <div style={{ position: 'absolute', inset: 0, zIndex: 80, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'var(--header-bg)', borderBottom: '1px solid var(--border-2)' }}>
+            <button onClick={() => setOrdersOpen(false)} style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border-2)', cursor: 'pointer', background: 'var(--surface-2)', color: textHi, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ArrowLeft size={18} /></button>
+            <div style={{ fontSize: 15, fontWeight: 800, color: textHi }}>My Orders</div>
           </div>
           {ordersLoading ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 size={26} style={{ color: PURPLE, animation: 'sp-spin 1s linear infinite' }} /></div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 size={26} style={{ color: PURPLE, animation: 'sp-spin 0.9s linear infinite' }} /></div>
           ) : orders.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32, textAlign: 'center' }}>
               <ShoppingBag size={34} style={{ color: textLo, opacity: 0.6 }} />
               <div style={{ fontSize: 14, fontWeight: 700, color: textHi }}>No orders yet</div>
-              <div style={{ fontSize: 12.5, color: textLo }}>Orders you send to dealers will appear here.</div>
+              <div style={{ fontSize: 12.5, color: textLo }}>Parts you order will appear here.</div>
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {orders.map(o => (
-                <div key={o.id} style={{ background: surface, borderRadius: 14, padding: 14, border: `1px solid ${border}` }}>
+                <div key={o.id} style={{ background: surface, borderRadius: 14, padding: 14, border }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <Wrench size={15} style={{ color: PURPLE, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, fontWeight: 700, color: textHi }}>{o.fault_label || 'Tools / spare parts'}</span>
+                    <GitBranch size={15} style={{ color: PURPLE, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: textHi }}>{o.fault_label || 'Spare part'}</span>
                   </div>
-                  {o.dealer_name && <div style={{ fontSize: 12.5, color: textMd, marginBottom: 4 }}>Dealer: <strong>{o.dealer_name}</strong>{o.dealer_phone ? ` · ${o.dealer_phone}` : ''}</div>}
+                  {o.dealer_name && <div style={{ fontSize: 12.5, color: textMd, marginBottom: 4 }}>Supplier: <strong>{o.dealer_name}</strong>{o.dealer_phone ? ` · ${o.dealer_phone}` : ''}</div>}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: textLo }}>
                     <Clock size={11} /> {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </span>
@@ -337,8 +549,6 @@ export default function SpareParts() {
           )}
         </div>
       )}
-
-      <style>{`@keyframes sp-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

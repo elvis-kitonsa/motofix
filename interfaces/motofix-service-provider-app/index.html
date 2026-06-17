@@ -1,24 +1,53 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#F7F5F1" />
+    <meta name="theme-color" content="#ffffff" />
     <title>MOTOFIX Provider</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
-  </head>
-  <body>
     <script>
-      (function() {
-        var theme = localStorage.getItem('motofix_sp_theme') || 'dark';
-        document.documentElement.classList.add(theme);
+      // Apply the theme class before paint. Wrapped so a storage-blocked browser
+      // (Safari "Block All Cookies" / Lockdown / private mode) can't throw here.
+      (function () {
+        var t = 'light';
+        try { t = localStorage.getItem('motofix_sp_theme2') || 'light'; } catch (e) {}
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(t);
       })();
     </script>
+  </head>
+  <body>
     <div id="root"></div>
+    <!-- Boot diagnostic: shows on-screen if the app fails to render (e.g. on a phone
+         with no console). Removed automatically once React mounts. -->
+    <div id="boot" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;font:14px -apple-system,system-ui,sans-serif;color:#333;background:#fff;text-align:center;white-space:pre-wrap;z-index:99999">Loading MOTOFIX…</div>
+    <script>
+      (function () {
+        var boot = document.getElementById('boot');
+        function show(msg) { if (boot) { boot.style.color = '#c0392b'; boot.textContent = msg; } }
+        window.addEventListener('error', function (e) {
+          show('Script error:\n' + (e.message || '') + (e.filename ? '\n' + e.filename + ':' + e.lineno + ':' + e.colno : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason; show('Promise rejected:\n' + ((r && (r.stack || r.message)) || String(r)));
+        });
+        var iv = setInterval(function () {
+          var root = document.getElementById('root');
+          if (root && root.childElementCount > 0) { clearInterval(iv); if (boot && boot.parentNode) boot.parentNode.removeChild(boot); }
+        }, 150);
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (boot && root && root.childElementCount === 0 && boot.textContent.indexOf('error') < 0 && boot.textContent.indexOf('rejected') < 0) {
+            show('App did not render after 6s and no script error was caught — the JS modules likely did not load (certificate/trust or network).');
+          }
+        }, 6000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Navigation2, Phone, MessageCircle, MapPin, Maximize2, Minimize2, Stethoscope, ChevronLeft, Wrench, Smartphone, Clock, User, Star, Ban } from 'lucide-react'
+import { Navigation2, Phone, MessageCircle, MapPin, Maximize2, Minimize2, Stethoscope, ChevronLeft, Wrench, Smartphone, Clock, User, Star, Ban, Check, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import CancelJobModal from '@/components/CancelJobModal'
 import { useLoadScript, GoogleMap, Marker, Polyline } from '@react-google-maps/api'
@@ -8,7 +8,8 @@ import { buildRouteMeta, projectToRoute, pointAtDist, remainingPath, type RouteM
 import { useJobSim, SIM_MINUTES } from '@/hooks/useJobSim'
 import { reverseGeocode } from '@/utils/geocode'
 import { C } from '@/styles/tokens'
-import { jobService, reviewService, chatService } from '@/config/api'
+import { jobService, reviewService, chatService, estimateService } from '@/config/api'
+import type { ServiceEstimate } from '@/config/api'
 import { useLocation } from '@/hooks/useLocation'
 import StatusBar from '@/components/StatusBar'
 import EmptyState from '@/components/EmptyState'
@@ -183,6 +184,10 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   const [showCompletion, setShowCompletion] = useState(false)
   const [actualFee, setActualFee] = useState('')
   const [serviceNote, setServiceNote] = useState('')
+  // AI completion helper: tickable fixes + cost/transport estimate + reasonableness.
+  const [estimate, setEstimate] = useState<ServiceEstimate | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
+  const [selectedFixes, setSelectedFixes] = useState<string[]>([])
 
   // Quote state
   const [quoteAmount, setQuoteAmount] = useState('')
@@ -366,6 +371,24 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     }
   }, [activeRequest, onJobCompleted])
 
+  // When the completion sheet opens, fetch the AI fix-list + cost/transport estimate
+  // for this fault so the mechanic can tick (not type) and get a fair-price guide.
+  useEffect(() => {
+    if (!showCompletion || !activeRequest) return
+    let alive = true
+    setEstimate(null)
+    setSelectedFixes([])
+    setEstimateLoading(true)
+    estimateService.get({
+      issue_type: activeRequest.issue_type ?? activeRequest.service_type,
+      description: activeRequest.description,
+      distance_km: activeRequest.distance_km,
+    })
+      .then(est => { if (alive && est) setEstimate(est) })
+      .finally(() => { if (alive) setEstimateLoading(false) })
+    return () => { alive = false }
+  }, [showCompletion, activeRequest?.id])
+
   // Deterministic shared simulation — identical route/pin/ETA as the driver app.
   // Keyed off the STABLE request location (not the live-GPS driverPos, which the
   // driver may broadcast) so both apps compute exactly the same route.
@@ -382,10 +405,11 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     enRouteAt: (activeRequest as any)?.en_route_at ?? null,
   })
 
-  // The driver's pin = live GPS if they're broadcasting it, otherwise the request's
-  // location (a waiting driver usually isn't broadcasting, so without this the blue
-  // driver pin never appears and the map can't frame the destination).
-  const driverMarkerPos: LL | null = driverPos ?? reqDriver
+  // Pin the driver at the request's fixed coordinates — i.e. the route's destination —
+  // so the blue pin always sits exactly at the end of the drawn route. Using live GPS
+  // here would let the pin drift off the route end (or hide under the mechanic pin)
+  // whenever the driver app broadcasts a position different from the pinned request.
+  const driverMarkerPos: LL | null = reqDriver ?? driverPos
 
   // Auto-advance to "arrived" once the simulated journey completes.
   useEffect(() => {
@@ -449,26 +473,22 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     // Frame the driver + the (simulated) route start so the whole journey shows.
     const mechFrame: LL | null = sim.start ?? sim.mechPos ??
       (effectiveLat != null && effectiveLng != null ? { lat: effectiveLat, lng: effectiveLng } : null)
-    let didFit = false
     if (driverMarkerPos && mechFrame) {
       const bounds = new (window as any).google.maps.LatLngBounds()
       bounds.extend(driverMarkerPos)
       bounds.extend(mechFrame)
       map.fitBounds(bounds, 60)
-      didFit = true
     } else if (driverMarkerPos) {
       map.setCenter(driverMarkerPos)
       map.setZoom(16)
-      didFit = true
     } else if (mechFrame) {
       map.setCenter(mechFrame)
       map.setZoom(16)
-      didFit = true
     }
-    // Only mark the initial fit "done" once we actually framed something. On a
-    // phone over http the positions arrive AFTER the map loads, so marking it
-    // done prematurely would leave the pins parked off-screen.
-    if (!didFit) return
+    // Only mark the initial fit "done" once BOTH ends are framed. On a phone the
+    // driver location / route arrive AFTER the map loads, so marking it done with
+    // just the mechanic framed would park the driver pin permanently off-screen.
+    if (!driverMarkerPos || !mechFrame) return
     if (isExp) initialFitDoneExpRef.current = true
     else       initialFitDoneRef.current    = true
   }, [driverMarkerPos, effectiveLat, effectiveLng, sim.start, sim.mechPos, isLoaded])
@@ -733,6 +753,14 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   const action = actionConfig[status]
   // Breakdown Rescue jobs resolve on-site as either a repair or a tow.
   const isBreakdown = /breakdown/i.test(`${activeRequest.issue_type ?? ''} ${activeRequest.service_type ?? ''}`)
+  // Specific "in progress" wording for the job-progress card — no generic "repair / refuel".
+  const _issueLabel = activeRequest.issue_type ?? activeRequest.service_type ?? ''
+  const _svcText = `${activeRequest.issue_type ?? ''} ${activeRequest.service_type ?? ''}`.toLowerCase()
+  const serviceDesc =
+    /fuel/.test(_svcText) ? 'Refuelling your vehicle' :
+    /tow/.test(_svcText)  ? 'Towing your vehicle to safety' :
+    _issueLabel           ? `Working on your ${_issueLabel.toLowerCase()}` :
+    'Service work is underway'
   const needOutcome = isBreakdown && status === 'in_progress' && !bdOutcome
   const isAwaitingConfirmation = status === 'awaiting_confirmation'
   // Who started the completion handshake. If the DRIVER (or the system) did, the
@@ -876,7 +904,10 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
               {driverMarkerPos && <Marker position={driverMarkerPos} icon={driverIcon} title="Driver" />}
               {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" />}
               {simRemaining && simRemaining.length >= 2 && (
-                <Polyline path={simRemaining} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
+                // key tracks the journey so the line is re-drawn as the mechanic
+                // advances — otherwise its path freezes at the full route and the
+                // pin just slides over a static line instead of the road shrinking.
+                <Polyline key={`route-${Math.round(sim.progress * 300)}`} path={simRemaining} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
               )}
               {garageDest?.lat != null && garageDest?.lng != null && (
                 <Marker position={{ lat: garageDest.lat, lng: garageDest.lng }} icon={{ url: GARAGE_PIN_SVG, scaledSize: new (window as any).google.maps.Size(40, 49), anchor: new (window as any).google.maps.Point(20, 48) }} title={`Tow to: ${garageDest.name}`} />
@@ -1004,6 +1035,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
           <div style={{ marginBottom: 12, background: C.surface2, borderRadius: 16, border: `1px solid ${C.border}`, padding: '14px 16px' }}>
             <StatusBar
               status={status}
+              serviceDesc={serviceDesc}
               actions={{
                 onCall: () => setShowCallSheet(true),
                 onChat: () => { setChatUnread(0); navigate(`/chat/${activeRequest.id}`) },
@@ -1358,18 +1390,85 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
       {/* Completion modal */}
       {showCompletion && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: C.surface1, borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 480, animation: 'slideUp 0.3s ease' }}>
+          <div style={{ background: C.surface1, borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', animation: 'slideUp 0.3s ease' }}>
             <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: '0 auto 20px' }} />
             <h2 style={{ fontSize: 20, fontWeight: 800, color: C.amber, textAlign: 'center', marginBottom: 6 }}>Service Provided</h2>
-            <p style={{ fontSize: 13, color: C.textMuted, textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-              Enter the final charge and a brief note. The driver will be asked to confirm before the job is marked complete.
+            <p style={{ fontSize: 13, color: C.textMuted, textAlign: 'center', marginBottom: 18, lineHeight: 1.5 }}>
+              Tick what you did and set the charge. The driver pays only after they confirm the job is done.
             </p>
+
+            {/* Tickable "what was fixed" — AI-suggested for this fault, no typing needed */}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>What did you fix?</label>
+            {estimateLoading && !estimate ? (
+              <p style={{ fontSize: 12.5, color: C.textFaint, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Sparkles style={{ width: 13, height: 13, color: C.amber }} /> Getting the common fixes for this fault…
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {(estimate?.fix_options ?? []).map(opt => {
+                  const on = selectedFixes.includes(opt)
+                  return (
+                    <button key={opt} type="button"
+                      onClick={() => setSelectedFixes(s => on ? s.filter(x => x !== opt) : [...s, opt])}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 12, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+                        background: on ? 'rgba(34,197,94,0.16)' : C.surface2,
+                        border: `1.5px solid ${on ? C.green : C.border}`,
+                        color: on ? C.green : C.textMuted,
+                      }}>
+                      {on && <Check style={{ width: 13, height: 13 }} />} {opt}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <textarea placeholder="Anything else? (optional)" value={serviceNote} onChange={e => setServiceNote(e.target.value)}
+              rows={2} style={{ width: '100%', borderRadius: 12, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 13, padding: '11px 14px', outline: 'none', resize: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
+
+            {/* AI fair-price estimate (transport boda + labour + parts) */}
+            {estimate && (
+              <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', marginBottom: 14 }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Sparkles style={{ width: 12, height: 12, color: C.amber }} /> AI fair-price estimate
+                </p>
+                {[
+                  { label: 'Transport (boda)', v: estimate.transport },
+                  { label: 'Labour', v: estimate.labour },
+                  ...(estimate.parts.max > 0 ? [{ label: 'Parts', v: estimate.parts }] : []),
+                ].map(row => (
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <span style={{ fontSize: 12.5, color: C.textMuted }}>{row.label}</span>
+                    <span style={{ fontSize: 12.5, color: C.textHi, fontWeight: 600 }}>UGX {row.v.min.toLocaleString()}–{row.v.max.toLocaleString()}</span>
+                  </div>
+                ))}
+                <div style={{ height: 1, background: C.border, margin: '8px 0' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: C.textHi, fontWeight: 800 }}>Typical total</span>
+                  <span style={{ fontSize: 13, color: C.amber, fontWeight: 800 }}>UGX {estimate.total.min.toLocaleString()}–{estimate.total.max.toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>Final service charge (UGX):</label>
             <input type="number" placeholder="e.g. 50000" value={actualFee} onChange={e => setActualFee(e.target.value)}
-              style={{ width: '100%', height: 52, borderRadius: 12, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 20, fontWeight: 700, padding: '0 16px', outline: 'none', marginBottom: 12, boxSizing: 'border-box' }} />
-            <textarea placeholder="What did you fix? (e.g. replaced rear tyre, cleaned battery terminals)" value={serviceNote} onChange={e => setServiceNote(e.target.value)}
-              rows={3} style={{ width: '100%', borderRadius: 12, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 13, padding: '12px 16px', outline: 'none', resize: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
-            <button onClick={() => updateStatus('awaiting_confirmation', { actual_fee: Number(actualFee), note: serviceNote })} disabled={!actualFee || actionLoading}
+              style={{ width: '100%', height: 52, borderRadius: 12, background: C.inputBg, border: `1px solid ${C.border}`, color: C.textHi, fontSize: 20, fontWeight: 700, padding: '0 16px', outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
+
+            {/* Real-time reasonableness vs the AI range */}
+            {estimate && Number(actualFee) > 0 && (() => {
+              const fee = Number(actualFee)
+              const within = fee >= estimate.total.min && fee <= estimate.total.max
+              const above  = fee > estimate.total.max
+              const col = within ? C.green : above ? C.amber : C.blue
+              const msg = within
+                ? '✓ Within the fair range — looks reasonable.'
+                : above
+                ? `⚠ Above the typical UGX ${estimate.total.min.toLocaleString()}–${estimate.total.max.toLocaleString()}. The driver will see this.`
+                : 'Below the typical range — make sure your costs are covered.'
+              return <p style={{ fontSize: 12, color: col, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>{msg}</p>
+            })()}
+
+            <button onClick={() => updateStatus('awaiting_confirmation', { actual_fee: Number(actualFee), note: [...selectedFixes, serviceNote.trim()].filter(Boolean).join('; ') })} disabled={!actualFee || actionLoading}
               style={{ width: '100%', height: 48, borderRadius: 12, border: 'none', background: actualFee ? `linear-gradient(135deg, ${C.amber}, ${C.amberDark})` : C.surface3, color: actualFee ? '#000' : C.textFaint, fontWeight: 700, fontSize: 15, cursor: actualFee ? 'pointer' : 'not-allowed', marginBottom: 8 }}>
               {actionLoading ? '…' : 'Notify Driver – Job Done'}
             </button>

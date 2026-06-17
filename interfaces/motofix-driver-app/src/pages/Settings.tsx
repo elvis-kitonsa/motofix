@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Moon, Sun, Bell, BellOff, MapPin, MapPinOff,
-  Shield, Eye, EyeOff, Info, FileText, Star, Mail,
+  Shield, Eye, EyeOff, Info, FileText, Star,
   ChevronRight, Settings as SettingsIcon, Smartphone,
   Navigation, Vibrate, Volume2, RefreshCw, CheckCircle2, X, Zap,
 } from 'lucide-react';
@@ -556,7 +556,6 @@ export default function Settings() {
           <LinkRow icon={FileText}   iconColor="#60A5FA" label="Terms of Service"   sub="Read our usage terms"        onClick={() => navigate('/terms-of-service')} />
           <LinkRow icon={EyeOff}     iconColor="#A78BFA" label="Privacy Policy"     sub="How we handle your data"     onClick={() => navigate('/privacy-policy')} />
           <LinkRow icon={Star}       iconColor="#F59E0B" label="Rate MOTOFIX"       sub="Tell us about your experience" onClick={() => navigate('/rate-motofix')} />
-          <LinkRow icon={Mail}       iconColor="#34D399" label="Contact Support"    sub="Get help from the MOTOFIX team" onClick={() => navigate('/contact-support')} />
           <button
             onClick={checkForUpdates}
             style={{ width: '100%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', cursor: 'pointer', textAlign: 'left' }}

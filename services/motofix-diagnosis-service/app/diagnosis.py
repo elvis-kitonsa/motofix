@@ -373,6 +373,116 @@ async def price_spare_parts(items: list[str], groq_client: AsyncGroq) -> dict:
     return {"items": out, "currency": "UGX"}
 
 
+# ─── Rotating, AI-written home-screen headlines ────────────────────────────────
+_GREETING_FALLBACK = {
+    ("mechanic", "latenight"):    ["Beat the competition tonight,", "Night shifts pay the most,", "Stranded drivers need you now,", "Catch a late-night hustle,"],
+    ("mechanic", "earlymorning"): ["Pick up an early request,", "Rise and claim those jobs,", "Early birds earn the most,", "Beat the morning rush,"],
+    ("mechanic", "morning"):      ["Morning jobs are rolling in,", "Make the most of your morning,", "Catch the day's best jobs,", "Cars need fixing this morning,"],
+    ("mechanic", "afternoon"):    ["Afternoon hustle mode on,", "Midday jobs are waiting,", "Keep the grind going,", "Peak hours are starting,"],
+    ("mechanic", "evening"):      ["Evening rush is starting,", "Best hours to be online,", "Catch the evening wave,", "Breakdowns don't stop at night,"],
+    ("driver", "latenight"):      ["Car trouble this late?", "Stuck after dark?", "Help is one tap away,", "Stranded tonight?"],
+    ("driver", "earlymorning"):   ["Rough start this morning?", "Car won't cooperate?", "Trouble before work?", "Need a quick fix?"],
+    ("driver", "morning"):        ["Having a rough morning?", "Car giving you trouble?", "Stuck on the road?", "Need a hand this morning?"],
+    ("driver", "afternoon"):      ["Having a rough afternoon?", "Car acting up?", "Stranded somewhere?", "Need help right now?"],
+    ("driver", "evening"):        ["Having a rough evening?", "Car trouble tonight?", "Stuck after dark?", "Help is one tap away,"],
+}
+
+def fallback_greetings(role: str, period: str) -> list[str]:
+    return (
+        _GREETING_FALLBACK.get((role, period))
+        or _GREETING_FALLBACK.get((role, "evening"))
+        or ["Welcome back,"]
+    )
+
+async def generate_greetings(role: str, period: str, groq_client: AsyncGroq) -> list[str]:
+    """A batch of short, varied home-screen headlines for the role + time of day.
+    The frontend caches the batch and rotates through it; this is called per login."""
+    if role == "mechanic":
+        audience = "a roadside mechanic / tow provider on a Ugandan roadside-assistance app called MOTOFIX"
+        brief = (
+            "Motivate them to stay online and grab breakdown jobs — hustle and earning energy. "
+            "Each line must read naturally with the person's FIRST NAME appended right after, so "
+            "end every line with a comma (e.g. 'Evening rush is starting,')."
+        )
+    else:
+        audience = "a driver on a Ugandan roadside-assistance app called MOTOFIX who might have car trouble"
+        brief = (
+            "Warm and reassuring, often a short question, reminding them help is one tap away. "
+            "Standalone short lines or questions (e.g. 'Having a rough evening?')."
+        )
+    prompt = (
+        f"Write 12 fresh, varied home-screen greeting headlines for {audience}. Time of day: {period}. "
+        f"{brief} Each at most 6 words. No emojis, no numbering, no surrounding quotes. "
+        'Return JSON exactly as: {"messages": ["...", "..."]}'
+    )
+    resp = await groq_client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=1.0,
+        max_tokens=400,
+        response_format={"type": "json_object"},
+    )
+    data = json.loads(resp.choices[0].message.content)
+    msgs = [str(s).strip() for s in (data.get("messages") or []) if str(s).strip()]
+    msgs = [m for m in msgs if len(m) <= 48][:12]
+    return msgs or fallback_greetings(role, period)
+
+
+# ─── Job-completion estimate — tickable fixes + AI cost/transport breakdown ─────
+def fallback_service_estimate(issue: str, distance_km: float) -> dict:
+    d = max(0.5, min(20.0, distance_km if distance_km and distance_km > 0 else 3.0))
+    t_min, t_max = int(2000 + d * 800), int(3000 + d * 1500)
+    return {
+        "fix_options": ["Diagnosed the fault", "Carried out the repair", "Replaced the worn part", "Tested the vehicle", "Cleaned up and finished"],
+        "transport": {"min": t_min, "max": t_max},
+        "labour":    {"min": 10000, "max": 30000},
+        "parts":     {"min": 0, "max": 50000},
+        "total":     {"min": t_min + 10000, "max": t_max + 80000},
+        "source": "fallback",
+    }
+
+def _rng(o, dmin: int, dmax: int) -> dict:
+    try:
+        mn = int(o.get("min") if o.get("min") is not None else dmin)
+        mx = int(o.get("max") if o.get("max") is not None else dmax)
+        mn = max(0, mn)
+        return {"min": mn, "max": max(mn, mx)}
+    except (ValueError, TypeError, AttributeError):
+        return {"min": dmin, "max": dmax}
+
+async def service_estimate(issue: str, description: str, distance_km: float, groq_client: AsyncGroq) -> dict:
+    """For a finished job: a tickable list of likely fixes + an AI cost breakdown
+    (boda transport for the distance travelled + labour + parts) for Kampala, Uganda."""
+    dist = distance_km if distance_km and distance_km > 0 else 3.0
+    prompt = (
+        f"A mechanic on MOTOFIX (roadside assistance in Kampala, Uganda) just finished a job and "
+        f"needs to bill the driver. Fault: '{issue or 'vehicle fault'}'. "
+        f"Driver's description: '{description or 'n/a'}'. "
+        f"The mechanic travelled about {dist:.1f} km by boda boda to reach the driver. "
+        "Return realistic 2026 Ugandan-Shilling figures as JSON:\n"
+        '{"fix_options": ["up to 7 short specific things a mechanic commonly does to fix THIS fault, each <=5 words"], '
+        '"transport": {"min": <ugx>, "max": <ugx>}, "labour": {"min": <ugx>, "max": <ugx>}, '
+        '"parts": {"min": <ugx>, "max": <ugx>}, "total": {"min": <ugx>, "max": <ugx>}}\n'
+        "transport = a fair boda fare for that distance. parts = 0..max if no new parts needed. "
+        "total = transport+labour+parts. Return ONLY the JSON."
+    )
+    resp = await groq_client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        max_tokens=600,
+        response_format={"type": "json_object"},
+    )
+    data = json.loads(resp.choices[0].message.content)
+    fb = fallback_service_estimate(issue, dist)
+    fixes = [str(s).strip() for s in (data.get("fix_options") or []) if str(s).strip()][:7] or fb["fix_options"]
+    transport = _rng(data.get("transport") or {}, fb["transport"]["min"], fb["transport"]["max"])
+    labour    = _rng(data.get("labour") or {}, fb["labour"]["min"], fb["labour"]["max"])
+    parts     = _rng(data.get("parts") or {}, fb["parts"]["min"], fb["parts"]["max"])
+    total     = _rng(data.get("total") or {}, transport["min"] + labour["min"] + parts["min"], transport["max"] + labour["max"] + parts["max"])
+    return {"fix_options": fixes, "transport": transport, "labour": labour, "parts": parts, "total": total, "source": "ai"}
+
+
 async def fuel_advisor(car_model: str, fuel_type: str, groq_client: AsyncGroq) -> dict:
     """AI fuel-engine compatibility analysis for Uganda drivers."""
     prompt = _FUEL_ADVISOR_PROMPT.format(car_model=car_model, fuel_type=fuel_type)
@@ -436,6 +546,28 @@ When you have gathered enough information to dispatch the right help, end your r
 DIAGNOSIS_READY: true
 
 Otherwise end with:
+DIAGNOSIS_READY: false"""
+
+# MOTOBOT speaking to a PROFESSIONAL MECHANIC (a verified MOTOFIX provider), not a stranded
+# driver — so it gives detailed, technical, step-by-step repair guidance instead of short triage.
+_MECHANIC_SYSTEM_PROMPT = """You are MOTOBOT, MOTOFIX's AI assistant — here you are helping a PROFESSIONAL MECHANIC (a verified MOTOFIX service provider), NOT a stranded driver. When asked who you are, say you are MOTOBOT.
+
+━━ WHO YOU'RE TALKING TO ━━
+A working mechanic in Uganda who wants practical help diagnosing and FIXING vehicle faults. Assume solid hands-on knowledge — don't over-explain the basics, but be precise and technical.
+
+━━ SCOPE — STRICT (vehicles only) ━━
+Only discuss vehicle faults, diagnosis, repair procedures, parts, tools and servicing for cars, boda-bodas (motorcycles), matatus (minibuses) and lorries/trucks. If asked anything off-topic, reply exactly: "I'm MOTOBOT — I stick to vehicle diagnosis and repairs. Ask me about any fault you're working on." Do not answer off-topic questions even partially.
+
+━━ HOW TO ANSWER ━━
+- Give DETAILED, step-by-step diagnostic and repair guidance. NUMBER the steps.
+- Lead with the most likely cause, then how to CONFIRM it — the exact tests, measurements and expected readings (e.g. healthy battery 12.6V, alternator output 13.8–14.7V, brake pad minimum 3mm).
+- Name the specific parts and tools needed, with rough UGX price ranges where useful.
+- ALWAYS flag safety risks (e.g. never open a hot radiator cap; support the vehicle on axle stands, never just a jack).
+- Ugandan context: common vehicles, local parts availability, currency in UGX.
+- Use short paragraphs with numbered/bulleted lists. You may be longer than a driver chat, but stay practical — no filler.
+- Use **bold** for key terms, readings and part names.
+
+Always end your response with exactly:
 DIAGNOSIS_READY: false"""
 
 MODEL        = "llama-3.3-70b-versatile"
@@ -569,6 +701,7 @@ async def chat_with_image(
     prior_messages: List[ChatMessage],
     user_text: str,
     client: AsyncGroq | None = None,
+    persona: str = "driver",
 ) -> ChatResponse:
     # `client` is legacy (Groq) — image chat now runs on Claude (one multimodal call).
     if not _anthropic:
@@ -585,10 +718,11 @@ async def chat_with_image(
     convo.append({"role": "user", "content": user_content})
 
     try:
+        is_mechanic = persona == "mechanic"
         resp = await _anthropic.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=400,
-            system=_CHATBOT_SYSTEM_PROMPT + _CHAT_IMAGE_RULES,
+            max_tokens=700 if is_mechanic else 400,
+            system=(_MECHANIC_SYSTEM_PROMPT if is_mechanic else _CHATBOT_SYSTEM_PROMPT) + _CHAT_IMAGE_RULES,
             messages=convo,
         )
         raw_reply = _claude_text(resp)
@@ -627,7 +761,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, client: AsyncGroq)
         return ""
 
 
-async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq | None = None) -> ChatResponse:
+async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq | None = None, persona: str = "driver") -> ChatResponse:
     # `client` is legacy (Groq) — the chatbot now runs on Claude.
     if not _anthropic:
         return _chat_fallback()
@@ -636,11 +770,12 @@ async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq | None = 
     if not convo:
         convo = [{"role": "user", "content": "Hello"}]
 
+    is_mechanic = persona == "mechanic"
     try:
         resp = await _anthropic.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=400,
-            system=_CHATBOT_SYSTEM_PROMPT,
+            max_tokens=700 if is_mechanic else 400,
+            system=_MECHANIC_SYSTEM_PROMPT if is_mechanic else _CHATBOT_SYSTEM_PROMPT,
             messages=convo,
         )
         raw_reply = _claude_text(resp)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Sun, Moon, User, LogOut, RefreshCw, Zap } from 'lucide-react'
+import { Bell, Sun, Moon, User, LogOut, RefreshCw, Zap, PowerOff } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -27,6 +27,7 @@ export default function TopHeader({
   onToggleAvailable, unreadCount, onBellClick, onAvatarClick,
 }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showOffline, setShowOffline] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
@@ -35,12 +36,15 @@ export default function TopHeader({
   const navigate = useNavigate()
 
   const handleToggleClick = () => {
-    if (!isAvailable) setShowConfirm(true)
-    else onToggleAvailable()
+    if (!isAvailable) setShowConfirm(true)   // going online → confirm
+    else setShowOffline(true)                // going offline → confirm
   }
 
   const handleConfirmYes = () => { setShowConfirm(false); onToggleAvailable() }
   const handleConfirmNo  = () => setShowConfirm(false)
+
+  const handleOfflineYes = () => { setShowOffline(false); onToggleAvailable() }
+  const handleOfflineNo  = () => setShowOffline(false)
 
   const handleLogout = () => {
     setDropdownOpen(false)
@@ -361,6 +365,75 @@ export default function TopHeader({
               }}
             >
               Maybe Later
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Go-offline confirmation sheet ───────────────────────── */}
+      {showOffline && (
+        <>
+          <div
+            onClick={handleOfflineNo}
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.55)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 200,
+              animation: 'hdr-fade 0.2s ease both',
+            }}
+          />
+          <div style={{
+            position: 'fixed', bottom: 0, left: '50%',
+            width: '100%', maxWidth: 480,
+            background: 'var(--sheet-bg)',
+            border: '1px solid var(--border-3)',
+            borderBottom: 'none',
+            borderRadius: '28px 28px 0 0',
+            padding: '32px 24px 44px',
+            zIndex: 201,
+            animation: 'hdr-sheet-in 0.35s cubic-bezier(0.34,1.3,0.64,1) both',
+          }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-4)', margin: '0 auto 28px' }} />
+
+            <div style={{ width: 72, height: 72, borderRadius: '50%', margin: '0 auto 24px', background: 'rgba(245,158,11,0.14)', border: '1.5px solid rgba(245,158,11,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <PowerOff style={{ width: 30, height: 30, color: '#F59E0B' }} />
+            </div>
+
+            <h2 style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-hi)', textAlign: 'center', letterSpacing: '-0.02em', marginBottom: 10 }}>
+              Go Offline?
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-md)', textAlign: 'center', lineHeight: 1.65, marginBottom: 32, padding: '0 8px' }}>
+              While offline you'll stop receiving new job requests from nearby drivers until you come back online. Any job you're already handling stays active.
+            </p>
+
+            <button
+              onClick={handleOfflineYes}
+              style={{
+                width: '100%', padding: '16px', borderRadius: 18, marginBottom: 12,
+                background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                border: 'none', cursor: 'pointer',
+                fontSize: 15, fontWeight: 800, color: '#000',
+                boxShadow: '0 4px 24px rgba(245,158,11,0.30)',
+                transition: 'transform 0.15s ease',
+              }}
+              onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.98)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+            >
+              Yes, Go Offline
+            </button>
+            <button
+              onClick={handleOfflineNo}
+              style={{
+                width: '100%', padding: '15px', borderRadius: 18,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-2)',
+                cursor: 'pointer',
+                fontSize: 14, fontWeight: 700, color: 'var(--text-md)',
+                transition: 'background 0.2s ease',
+              }}
+            >
+              Stay Online
             </button>
           </div>
         </>

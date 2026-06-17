@@ -15,7 +15,8 @@ load_dotenv()
 
 import httpx
 from math import radians, cos, sin, asin, sqrt
-from .diagnosis import chat_diagnose, chat_with_image, diagnose_image, diagnose_text, fuel_advisor, guided_diagnose, price_spare_parts, transcribe_audio
+from pydantic import BaseModel
+from .diagnosis import chat_diagnose, chat_with_image, diagnose_image, diagnose_text, fuel_advisor, guided_diagnose, price_spare_parts, transcribe_audio, generate_greetings, fallback_greetings, service_estimate, fallback_service_estimate
 from .schemas import (
     ChatMessage, ChatRequest, ChatResponse, DiagnosisResult, TextDiagnosisRequest,
     FuelAdvisorRequest, NearbyStationsRequest, GuidedDiagnoseRequest,
@@ -130,6 +131,46 @@ async def health():
     }
 
 
+@app.get("/greetings", tags=["greetings"])
+async def greetings(role: str = "driver", period: str = "evening"):
+    """Rotating, AI-written home-screen headlines for the driver/mechanic apps.
+    Public + always succeeds: falls back to a built-in pool when Groq is off or fails,
+    so the home screen always has fresh copy."""
+    role = "mechanic" if str(role).lower().startswith("mech") else "driver"
+    period = str(period).lower()
+    if period not in ("latenight", "earlymorning", "morning", "afternoon", "evening"):
+        period = "evening"
+    if not groq_client:
+        return {"messages": fallback_greetings(role, period), "source": "fallback"}
+    try:
+        return {"messages": await generate_greetings(role, period, groq_client), "source": "ai"}
+    except Exception as e:  # pragma: no cover - best effort, never break the home screen
+        logger.warning("greetings generation failed: %s", e)
+        return {"messages": fallback_greetings(role, period), "source": "fallback"}
+
+
+class ServiceEstimateRequest(BaseModel):
+    issue_type: Optional[str] = None
+    description: Optional[str] = None
+    distance_km: Optional[float] = None
+
+
+@app.post("/service-estimate", tags=["estimate"])
+async def service_estimate_endpoint(body: ServiceEstimateRequest):
+    """For a just-finished job: a tickable list of likely fixes + an AI cost breakdown
+    (boda transport + labour + parts). Public + always succeeds (fallback on AI failure)."""
+    issue = body.issue_type or ""
+    desc = body.description or ""
+    dist = float(body.distance_km or 3.0)
+    if not groq_client:
+        return fallback_service_estimate(issue, dist)
+    try:
+        return await service_estimate(issue, desc, dist, groq_client)
+    except Exception as e:  # pragma: no cover - never block job completion
+        logger.warning("service-estimate failed: %s", e)
+        return fallback_service_estimate(issue, dist)
+
+
 @app.post("/diagnose", response_model=DiagnosisResult, tags=["diagnosis"])
 async def diagnose(
     body: TextDiagnosisRequest,
@@ -200,6 +241,7 @@ async def chat_image(
     file: UploadFile = File(...),
     messages: str = Form(default="[]"),
     user_text: str = Form(default=""),
+    persona: str = Form(default="driver"),
     _user: dict = Depends(_require_token),
 ):
     """
@@ -223,7 +265,7 @@ async def chat_image(
     except Exception:
         prior = []
 
-    return await chat_with_image(image_bytes, content_type, prior, user_text.strip())
+    return await chat_with_image(image_bytes, content_type, prior, user_text.strip(), persona=persona or "driver")
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["chatbot"])
@@ -243,7 +285,7 @@ async def chat(
     """
     if not ANTHROPIC_API_KEY:
         raise HTTPException(status_code=503, detail="Claude API key not configured on this server")
-    return await chat_diagnose(body.messages)
+    return await chat_diagnose(body.messages, persona=body.persona or "driver")
 
 
 @app.post("/transcribe", tags=["chatbot"])

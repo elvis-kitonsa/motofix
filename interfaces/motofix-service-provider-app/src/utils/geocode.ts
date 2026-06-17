@@ -31,6 +31,49 @@ function shorten(addr: string): string {
   return addr.split(',').slice(0, 3).join(',').trim()
 }
 
+// ── Human-readable label from Google address components (mirrors the driver app) ──
+// Building the label from components (route/premise/area) — rather than taking
+// results[0].formatted_address — means we NEVER surface a Google Plus Code like
+// "9H37+H92" when a coordinate has no exact street address.
+type GComp = { long_name: string; types: string[] }
+type GResult = { address_components?: GComp[]; formatted_address?: string }
+
+function getComp(components: GComp[], type: string): string | null {
+  return components.find((c) => c.types.includes(type))?.long_name ?? null
+}
+
+// Reject Google Plus Codes (e.g. "9H37+H92", "QH7V+2X Kampala") so they're never shown.
+function isPlusCode(s?: string | null): boolean {
+  return !!s && /[A-Z0-9]{4,}\+[A-Z0-9]{2,}/i.test(s)
+}
+
+function buildLabelFromResults(results: GResult[]): string | null {
+  let premise: string | null = null, route: string | null = null
+  let sub2: string | null = null, neighborhood: string | null = null
+  let sub1: string | null = null, locality: string | null = null
+  for (const res of results) {
+    const c = res.address_components ?? []
+    premise      = premise      || getComp(c, 'premise')
+    route        = route        || getComp(c, 'route')
+    sub2         = sub2         || getComp(c, 'sublocality_level_2')
+    neighborhood = neighborhood || getComp(c, 'neighborhood')
+    sub1         = sub1         || getComp(c, 'sublocality_level_1')
+    locality     = locality     || getComp(c, 'locality')
+  }
+  const area = sub2 || neighborhood || sub1 || locality
+  if (premise && route)     return `${premise}, ${route}`
+  if (premise && area)      return `${premise}, ${area}`
+  if (premise)              return premise
+  if (route && area)        return `${route}, ${area}`
+  if (route)                return route
+  if (area)                 return area
+  // Last resort: a formatted_address that is NOT a plus code and has no phone digits.
+  const clean = results.find(r => r.formatted_address && !isPlusCode(r.formatted_address) && !/\d{8,}/.test(r.formatted_address))
+  const fa = (clean ?? results[0])?.formatted_address
+  if (fa && !isPlusCode(fa)) return shorten(fa)
+  return null
+}
+
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const key = `${lat.toFixed(5)},${lng.toFixed(5)}`
   const cached = _cache.get(key)
@@ -45,10 +88,10 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
       try {
         const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`)
         const d = await r.json()
-        if (d.status === 'OK' && d.results?.[0]?.formatted_address) {
-          const addr = shorten(d.results[0].formatted_address)
-          _cache.set(key, addr)
-          return addr
+        if (d.status === 'OK' && Array.isArray(d.results) && d.results.length) {
+          // Build from address components so a Plus Code is never shown.
+          const addr = buildLabelFromResults(d.results as GResult[])
+          if (addr) { _cache.set(key, addr); return addr }
         }
       } catch { /* fall through to OSM */ }
     }

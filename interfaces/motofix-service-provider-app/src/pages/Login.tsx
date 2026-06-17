@@ -250,13 +250,6 @@ export default function Login() {
         @keyframes sp-modal-in { from{opacity:0;transform:scale(0.95) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
         @keyframes sp-spin     { to{transform:rotate(360deg)} }
         @keyframes dot-blink   { 0%,100%{opacity:1} 50%{opacity:0.2} }
-        input:-webkit-autofill,
-        input:-webkit-autofill:hover,
-        input:-webkit-autofill:focus {
-          -webkit-box-shadow: 0 0 0px 1000px ${isDark ? 'rgba(255,255,255,0.06)' : '#ffffff'} inset !important;
-          -webkit-text-fill-color: var(--text-hi) !important;
-          caret-color: var(--text-hi);
-        }
       `}</style>
 
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>

@@ -8,22 +8,26 @@ interface ThemeContextValue {
   toggleTheme: () => void
 }
 
+// Light is the default. Key bumped to *_theme2 so previously auto-saved 'dark'
+// values are ignored and everyone starts in light until they explicitly switch.
+const THEME_KEY = 'motofix_sp_theme2'
+
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'dark',
-  isDark: true,
+  theme: 'light',
+  isDark: false,
   toggleTheme: () => {},
 })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem('motofix_sp_theme') as Theme) ?? 'dark'
+    try { return (localStorage.getItem(THEME_KEY) as Theme) ?? 'light' } catch { return 'light' }
   })
 
   useEffect(() => {
     const html = document.documentElement
     html.classList.remove('dark', 'light')
     html.classList.add(theme)
-    localStorage.setItem('motofix_sp_theme', theme)
+    try { localStorage.setItem(THEME_KEY, theme) } catch { /* storage blocked */ }
   }, [theme])
 
   const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))
