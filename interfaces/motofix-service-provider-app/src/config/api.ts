@@ -6,7 +6,9 @@ import type { ServiceRequest, MechanicProfile } from '@/types'
 const AUTH_URL           = import.meta.env.VITE_API_AUTH_URL           ?? ''
 const MECHANICS_URL      = import.meta.env.VITE_API_MECHANICS_URL      ?? ''
 const REQUESTS_URL       = import.meta.env.VITE_API_REQUESTS_URL       ?? ''
-const DIAGNOSIS_URL      = import.meta.env.VITE_API_DIAGNOSIS_URL      ?? 'http://localhost:8007'
+// Empty → relative URLs that go through the Vite dev proxy (see vite.config.ts), same as the
+// other services. Calling http://localhost:8007 directly is blocked over HTTPS (mixed content + CORS).
+const DIAGNOSIS_URL      = import.meta.env.VITE_API_DIAGNOSIS_URL      ?? ''
 const SUBSCRIPTIONS_URL  = import.meta.env.VITE_API_SUBSCRIPTIONS_URL  ?? ''
 
 function withAuth(instance: AxiosInstance): AxiosInstance {
@@ -206,6 +208,8 @@ export const jobService = {
     const params: Record<string, unknown> = { status: backendStatus }
     if (extra?.eta_minutes != null) params.eta_minutes = extra.eta_minutes
     if (extra?.cancel_reason != null) params.cancel_reason = extra.cancel_reason
+    if (extra?.actual_fee != null) params.actual_fee = extra.actual_fee
+    if (extra?.note != null) params.note = extra.note
     return requestsApi.patch<{ new_status: string; cancellation?: { strikes: number; suspended: boolean; limit: number } | null }>(
       `/requests/${id}/status`,
       null,
@@ -279,13 +283,22 @@ export const chatService = {
 export interface ChatMsg { role: 'user' | 'assistant'; content: string }
 
 export const diagnosisService = {
-  chat: (messages: ChatMsg[]) =>
-    diagnosisApi.post<{ reply: string; diagnosis_ready: boolean; diagnosis?: Record<string, unknown> }>('/chat', { messages }),
+  // persona 'mechanic' → MOTOBOT gives detailed step-by-step repair guidance (vs driver triage).
+  chat: (messages: ChatMsg[], persona: 'driver' | 'mechanic' = 'mechanic') =>
+    diagnosisApi.post<{ reply: string; diagnosis_ready: boolean; diagnosis?: Record<string, unknown> }>('/chat', { messages, persona }),
 
   chatWithImage: (formData: FormData) =>
     diagnosisApi.post<{ reply: string; diagnosis_ready: boolean; diagnosis?: Record<string, unknown> }>('/chat/image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+
+  // AI UGX price ranges for spare parts (each item a descriptive string, e.g.
+  // "Michelin 195/65 R15 tyre x4 for Toyota Premio").
+  partsPrice: (items: string[]) =>
+    diagnosisApi.post<{
+      currency: string
+      items: { name: string; price_min: number; price_max: number; new_min: number; new_max: number; used_min: number; used_max: number; note?: string | null }[]
+    }>('/parts-price', { items }),
 }
 
 // Price suggestion lookup by fault category
@@ -336,8 +349,9 @@ export const subscriptionService = {
 }
 
 // ── Platform fees (MOTOFIX revenue — replaces the subscription) ────────────────
-// A flat UGX 10,000 is owed per completed job. The mechanic settles their balance;
-// 5 unpaid jobs gates new acceptances, an overdue balance hard-locks the account.
+// A flat UGX 10,000 is owed per *completed* job (never charged before or during the job).
+// 3 unpaid jobs (UGX 30,000) is the strike-three threshold; enforcement (gating/locking) is
+// left for production, so for the demo `gated`/`locked` stay false and we only show the balance.
 export interface PlatformFeeState {
   mechanic_id: number
   owed_count: number
@@ -346,7 +360,17 @@ export interface PlatformFeeState {
   gate_jobs: number
   gated: boolean
   locked: boolean
-  jobs: { request_id: number; amount: number; created_at: string | null }[]
+  jobs: {
+    request_id: number
+    amount: number          // the platform fee owed on this job (flat 10k)
+    created_at: string | null
+    service_type?: string | null
+    customer_name?: string | null
+    location?: string | null
+    job_fee?: number | null  // what the mechanic charged/earned on the job (actual_fee)
+    completed_at?: string | null
+    service_note?: string | null
+  }[]
 }
 
 export const feesService = {
@@ -355,6 +379,29 @@ export const feesService = {
   // Settle owed fees. Pass an AI-parsed `sms_text` (MoMo confirmation) or an `amount`.
   pay: (mechanicId: string | number, body: { sms_text?: string; amount?: number; reference?: string }) =>
     requestsApi.post(`/fees/${mechanicId}/pay`, body),
+}
+
+// ── AI-generated, rotating home-screen headlines ──────────────────────────────
+export const greetingService = {
+  get: (role: 'driver' | 'mechanic', period: string): Promise<string[]> =>
+    diagnosisApi.get<{ messages?: string[] }>('/greetings', { params: { role, period } })
+      .then(r => r.data?.messages ?? [])
+      .catch(() => []),
+}
+
+// ── AI job-completion estimate: tickable fixes + cost/transport breakdown ──────
+export interface MoneyRange { min: number; max: number }
+export interface ServiceEstimate {
+  fix_options: string[]
+  transport: MoneyRange
+  labour: MoneyRange
+  parts: MoneyRange
+  total: MoneyRange
+  source?: string
+}
+export const estimateService = {
+  get: (body: { issue_type?: string; description?: string; distance_km?: number }): Promise<ServiceEstimate | null> =>
+    diagnosisApi.post<ServiceEstimate>('/service-estimate', body).then(r => r.data).catch(() => null),
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
