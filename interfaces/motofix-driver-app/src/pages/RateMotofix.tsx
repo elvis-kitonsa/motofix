@@ -102,6 +102,13 @@ export default function RateMotofix() {
     ].filter(Boolean);
     const comment = commentParts.join(' | ');
 
+    // Rating now (or already-reviewed) → drop the "Rate now" nudge so it never
+    // re-appears on Home. It should only persist when the driver DEFERS rating.
+    const clearReviewNudge = () => {
+      if (!isMechanicMode) return;
+      try { sessionStorage.removeItem('motofix_pending_review'); } catch { /* ignore */ }
+    };
+
     try {
       if (isMechanicMode && requestId) {
         await requestsService.submitReview(requestId, { rating, comment });
@@ -113,9 +120,11 @@ export default function RateMotofix() {
         feedback: feedback.trim(),
         submitted_at: new Date().toISOString(),
       }));
+      clearReviewNudge();
       setSubmitted(true);
     } catch (err: any) {
       if (err?.response?.status === 409) {
+        clearReviewNudge();  // already reviewed — also drop the nudge
         setSubmitted(true);
       } else {
         toast.error('Could not save your rating. Please try again.');
@@ -127,7 +136,9 @@ export default function RateMotofix() {
 
   const handleBack = () => {
     if (isMechanicMode) {
-      navigate('/', { replace: true });
+      // '/' is the Splash screen (re-runs the entry/auth flow → bounces to login).
+      // The Home tab is '/requests'.
+      navigate('/requests', { replace: true });
     } else {
       navigate('/settings', { replace: true, state: { skipSettingsIntro: true } });
     }
