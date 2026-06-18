@@ -277,6 +277,9 @@ export interface DiagnosisResult {
   repair_fee_max?: number | null;
   image_relevant?: boolean | null;
   image_feedback?: string | null;
+  repair_or_replace?: 'repair' | 'replace' | 'inspect' | null;
+  repair_or_replace_reason?: string | null;
+  needs_better_photo?: boolean | null;
 }
 export interface ChatResponse { reply: string; diagnosis_ready: boolean; diagnosis?: DiagnosisResult; }
 
@@ -411,8 +414,12 @@ export interface MechanicCandidate {
   mechanic_name: string;
   phone?: string;
   distance_km: number;
-  total_score: number;
-  score_breakdown: Record<string, number>;
+  total_score: number;            // 0–100 match priority (== match_priority)
+  match_priority?: number;        // 0–100 headline match priority %
+  rationale?: string;             // one-line "why this mechanic" explanation
+  capability_tier?: number | null;
+  score_breakdown: Record<string, number>;  // spec_match | availability | proximity | rating (0–100)
+  weights?: Record<string, number>;
 }
 export interface MatchResponse { request_id?: number; candidates: MechanicCandidate[]; total_eligible: number; }
 
