@@ -8,6 +8,7 @@ import { SIM_MINUTES } from '@/hooks/useJobSim'
 import TopHeader from '@/components/TopHeader'
 import BottomNav from '@/components/BottomNav'
 import IncomingRequestModal from '@/components/IncomingRequestModal'
+import BackLogoutGuard from '@/components/BackLogoutGuard'
 import Home from './tabs/Home'
 import Jobs from './tabs/Jobs'
 import Earnings from './tabs/Earnings'
@@ -50,7 +51,7 @@ const DISPATCH_FOLLOW_DELAY_MS = 4500
 export default function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { lastMessage, sendMessage } = useWS()
 
   useLayoutEffect(() => {
@@ -434,6 +435,7 @@ export default function Dashboard() {
 
   return (
     <>
+      <BackLogoutGuard onLogout={() => { logout(); navigate('/login', { replace: true }) }} />
       <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', overflowX: 'hidden' }}>
 
         {activeTab === 'home' && (
