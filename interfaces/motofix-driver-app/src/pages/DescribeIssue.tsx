@@ -1,8 +1,58 @@
-import { useState, useLayoutEffect, useEffect } from 'react'
+import { useState, useLayoutEffect, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, MapPin, Send, Sparkles } from 'lucide-react'
 import { requestsService, diagnosisService, type DiagnosisResult } from '@/config/api'
 import { useAuth } from '@/hooks/useAuth'
+
+/* ── Photo helpers — used to persist the uploaded photo across an iOS tab
+   reload (sessionStorage can't hold a File, so we keep a compressed data URL)
+   and to fingerprint a photo so re-uploading the SAME one can be detected. ── */
+function fileToCompressedDataUrl(file: File, maxDim = 1024, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (Math.max(width, height) > maxDim) {
+        const s = maxDim / Math.max(width, height)
+        width = Math.round(width * s); height = Math.round(height * s)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width; canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('no canvas context')); return }
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')) }
+    img.src = url
+  })
+}
+
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [head, b64] = dataUrl.split(',')
+  const mime = /:(.*?);/.exec(head)?.[1] || 'image/jpeg'
+  const bin = atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new File([arr], name, { type: mime })
+}
+
+/** Content fingerprint of a photo (SHA-256 when available, else a sampled FNV-1a). */
+async function hashFile(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  try {
+    if (crypto?.subtle?.digest) {
+      const d = await crypto.subtle.digest('SHA-256', buf)
+      return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('')
+    }
+  } catch { /* fall through to the cheap hash */ }
+  const bytes = new Uint8Array(buf)
+  let h = 0x811c9dc5
+  for (let i = 0; i < bytes.length; i += 997) { h ^= bytes[i]; h = Math.imul(h, 0x01000193) }
+  return `f${(h >>> 0).toString(16)}-${bytes.length}`
+}
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
 const SOS   = '#ff2d2d'
@@ -233,26 +283,49 @@ export default function DescribeIssue() {
   const accuracy   = routeState?.accuracy   // metres; undefined = fallback / unknown
   const isApprox   = accuracy == null || accuracy > 500
 
-  const [description,    setDescription]    = useState('')
+  // Draft persistence — iOS Safari evicts/reloads backgrounded tabs (memory pressure),
+  // which wipes in-memory React state. Persist the in-progress request to sessionStorage
+  // (survives the tab reload) and restore it on mount so nothing typed is lost.
+  const DRAFT_KEY = `motofix_describe_draft_${issueType ?? 'general'}`
+  const PHOTO_KEY = `${DRAFT_KEY}_photo`
+  const draft0 = (() => { try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} } })() as Partial<{ description: string; towChoice: 'find' | 'own'; garageName: string; garageArea: string; garagePhone: string }>
+  // Photo + its analysis persisted alongside the text draft (separate key — it's large).
+  // Parse once (the data URL is sizeable; re-parsing every render would lag typing).
+  const savedPhoto = useMemo(() => {
+    try { return JSON.parse(sessionStorage.getItem(PHOTO_KEY) || 'null') as { dataUrl: string; estimate: DiagnosisResult; hash: string } | null } catch { return null }
+  }, [PHOTO_KEY])
+
+  const [description,    setDescription]    = useState(draft0.description ?? '')
   const [dispatchPhase,  setDispatchPhase]  = useState<DispatchPhase>('idle')
   const [submitError,    setSubmitError]    = useState('')
-  const [towChoice,      setTowChoice]      = useState<'find' | 'own'>('find')
-  const [garageName,     setGarageName]     = useState('')
-  const [garageArea,     setGarageArea]     = useState('')
-  const [garagePhone,    setGaragePhone]    = useState('')
-  const [estimate,        setEstimate]        = useState<DiagnosisResult | null>(null)
-  const [estimateLoading, setEstimateLoading] = useState(true)
-  const [photoChecked,    setPhotoChecked]    = useState(false)
+  const [towChoice,      setTowChoice]      = useState<'find' | 'own'>(draft0.towChoice ?? 'find')
+  const [garageName,     setGarageName]     = useState(draft0.garageName ?? '')
+  const [garageArea,     setGarageArea]     = useState(draft0.garageArea ?? '')
+  const [garagePhone,    setGaragePhone]    = useState(draft0.garagePhone ?? '')
+  const [estimate,        setEstimate]        = useState<DiagnosisResult | null>(savedPhoto?.estimate ?? null)
+  const [estimateLoading, setEstimateLoading] = useState(!savedPhoto)
+  const [photoChecked,    setPhotoChecked]    = useState(!!savedPhoto)
   const [photoChecking,   setPhotoChecking]   = useState(false)
-  const [photoFile,       setPhotoFile]       = useState<File | null>(null)
+  const [photoFile,       setPhotoFile]       = useState<File | null>(() => savedPhoto ? dataUrlToFile(savedPhoto.dataUrl, 'damage.jpg') : null)
   const [photoError,      setPhotoError]      = useState('')
+  const [samePhoto,       setSamePhoto]       = useState(false)
+  const [betterPhotoHint, setBetterPhotoHint] = useState('')
+  const [photoMismatch,   setPhotoMismatch]   = useState('')  // photo doesn't match the reported issue → flag, hide price
+  const lastPhotoHashRef = useRef<string | null>(savedPhoto?.hash ?? null)
   const [displayAddress, setDisplayAddress] = useState<string | null>(null)
 
   const fmtUGX = (n: number) => 'UGX ' + Math.round(n).toLocaleString()
   const rng = (a: number, b: number) => (a === b ? fmtUGX(a) : `${fmtUGX(a)} – ${fmtUGX(b)}`)
 
-  // Transparent MOTOBOT cost estimate — fetched once when the screen opens.
+  // Save the draft on every change so a backgrounded-tab reload (iOS) can restore it.
   useEffect(() => {
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ description, towChoice, garageName, garageArea, garagePhone })) } catch { /* storage full — ignore */ }
+  }, [DRAFT_KEY, description, towChoice, garageName, garageArea, garagePhone])
+
+  // Transparent MOTOBOT cost estimate — fetched once when the screen opens.
+  // Skip if we restored a photo-based analysis (it's more accurate than the text one).
+  useEffect(() => {
+    if (savedPhoto) return
     let cancelled = false
     const seed = (aiSummary && aiSummary.trim())
       || `${ISSUE_LABELS[issueType ?? ''] ?? 'Vehicle issue'} — ${ISSUE_DEFAULTS[issueType ?? ''] ?? 'needs roadside assistance'}`
@@ -269,16 +342,38 @@ export default function DescribeIssue() {
   const handlePhoto = async (file: File) => {
     setPhotoError('')
     setPhotoChecking(true)
+    // Is this the exact same photo as the last one we analysed? (fingerprint match)
+    let isSame = false
     try {
-      const issueLabel = ISSUE_LABELS[issueType ?? ''] || (aiSummary?.trim()) || 'the reported problem'
+      const hash = await hashFile(file)
+      isSame = !!lastPhotoHashRef.current && hash === lastPhotoHashRef.current
+      lastPhotoHashRef.current = hash
+    } catch { /* hashing unavailable — treat as a new photo */ }
+    const issueLabel = ISSUE_LABELS[issueType ?? ''] || (aiSummary?.trim()) || 'the reported problem'
+    try {
       const r = await diagnosisService.diagnoseImage(file, issueLabel)
       if (r.data.image_relevant === false) {
-        // Photo isn't the vehicle / doesn't match the issue — ask for the right one.
-        setPhotoError(r.data.image_feedback || 'That photo doesn’t match the issue. Please upload a clear photo of the actual problem.')
+        // Photo isn't a vehicle, or doesn't match the reported issue → flag it and show
+        // NO price/recommendation. Drop the photo so an off-topic image isn't submitted.
+        setPhotoMismatch(r.data.image_feedback || `That photo doesn’t match your ${issueLabel}. Please upload a clear photo of the actual problem.`)
+        setPhotoChecked(false)
+        setPhotoFile(null)
+        setSamePhoto(false)
+        setBetterPhotoHint('')
+        try { sessionStorage.removeItem(PHOTO_KEY) } catch { /* ignore */ }
       } else {
+        setPhotoMismatch('')  // clear any prior mismatch — this photo is on-topic
         setEstimate(r.data)
         setPhotoChecked(true)
         setPhotoFile(file)
+        setSamePhoto(isSame)  // still analysed; we just tell the driver it's a repeat
+        // Right subject but too unclear to read → nudge for another angle (still keep this one).
+        setBetterPhotoHint(r.data.needs_better_photo ? (r.data.image_feedback || 'This photo is a bit unclear — please add another shot from a different angle, closer and in good light, for a sharper read.') : '')
+        // Persist the photo + its analysis so an iOS tab reload can restore them.
+        try {
+          const dataUrl = await fileToCompressedDataUrl(file)
+          sessionStorage.setItem(PHOTO_KEY, JSON.stringify({ dataUrl, estimate: r.data, hash: lastPhotoHashRef.current }))
+        } catch { /* quota / canvas issue — skip persistence, analysis still shows */ }
       }
     } catch {
       setPhotoError('Couldn’t check that photo — please try another one.')
@@ -288,12 +383,19 @@ export default function DescribeIssue() {
   }
   const photoVerdict = (() => {
     if (!photoChecked || !estimate) return null
+    // Prefer MOTOBOT's decisive call from the photo; fall back to a heuristic if absent.
+    const rec = (estimate.repair_or_replace || '').toLowerCase()
+    const reason = estimate.repair_or_replace_reason?.trim()
+    if (rec === 'repair')  return { tone: 'good' as const,  rec: 'repair' as const,  text: reason || 'Looks repairable — a fix should hold, so you likely do NOT need to buy a new part.' }
+    if (rec === 'replace') return { tone: 'warn' as const,  rec: 'replace' as const, text: reason || 'The damage is too deep for a lasting fix — a new part is genuinely needed.' }
+    if (rec === 'inspect') return { tone: 'mixed' as const, rec: 'inspect' as const, text: reason || 'Could go either way — ask the mechanic to physically show you the damage.' }
+    // Fallback heuristic (older diagnoses without an explicit verdict).
     const rMax = estimate.repair_fee_max ?? 0
     const hasParts = (estimate.required_parts ?? []).length > 0
     const severe = ['high', 'critical'].includes((estimate.severity || '').toLowerCase())
-    if (rMax > 0 && !severe) return { tone: 'good' as const, text: 'Looks repairable — you likely do NOT need to buy a new part.' }
-    if (hasParts && (rMax === 0 || severe)) return { tone: 'warn' as const, text: 'The damage looks serious — a new part is likely genuinely needed.' }
-    return { tone: 'mixed' as const, text: 'Could go either way — ask the mechanic to physically show you the damage.' }
+    if (rMax > 0 && !severe) return { tone: 'good' as const,  rec: 'repair' as const,  text: 'Looks repairable — you likely do NOT need to buy a new part.' }
+    if (hasParts && (rMax === 0 || severe)) return { tone: 'warn' as const, rec: 'replace' as const, text: 'The damage looks serious — a new part is likely genuinely needed.' }
+    return { tone: 'mixed' as const, rec: 'inspect' as const, text: 'Could go either way — ask the mechanic to physically show you the damage.' }
   })()
 
   useLayoutEffect(() => {
@@ -396,14 +498,25 @@ export default function DescribeIssue() {
         })
         newId = String(res.data?.id ?? '')
       }
+      try { sessionStorage.removeItem(DRAFT_KEY); sessionStorage.removeItem(PHOTO_KEY) } catch { /* ignore */ }
       setTimeout(() => {
         clearTimeout(t1); clearTimeout(t2)
         navigate(newId ? `/requests/${newId}` : '/requests', { replace: true })
       }, 4800)
-    } catch {
+    } catch (err) {
       clearTimeout(t1); clearTimeout(t2)
       setDispatchPhase('idle')
-      setSubmitError('Failed to submit. Please try again.')
+      const e = err as { response?: { status?: number; data?: { detail?: unknown } } }
+      const status = e?.response?.status
+      const d = e?.response?.data?.detail
+      const detail = typeof d === 'string' ? d : ''
+      setSubmitError(
+        status === 401 || status === 403
+          ? 'Your session has expired — please log out and back in, then try again.'
+          : status
+            ? `Couldn't submit your request (server error ${status}${detail ? `: ${detail}` : ''}). Please try again.`
+            : 'Can’t reach the server. Check your connection and that the MOTOFIX app server is running, then try again.',
+      )
     }
   }
 
@@ -607,6 +720,17 @@ export default function DescribeIssue() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <Sparkles style={{ width: 16, height: 16, color: AMBER }} />
             <p style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-hi)' }}>MOTOBOT cost estimate</p>
+            {!estimateLoading && estimate && !photoMismatch && (
+              <span style={{
+                marginLeft: 'auto', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.05em',
+                padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap',
+                background: photoChecked ? 'rgba(34,197,94,0.14)' : 'var(--surface-2)',
+                color:      photoChecked ? '#16A34A'             : 'var(--text-lo)',
+                border: `1px solid ${photoChecked ? 'rgba(34,197,94,0.35)' : 'var(--border-3)'}`,
+              }}>
+                {photoChecked ? '✓ REFINED FROM PHOTO' : 'PRELIMINARY'}
+              </span>
+            )}
           </div>
           {photoVerdict && (
             <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 12, marginBottom: 12, background: photoVerdict.tone === 'good' ? 'rgba(34,197,94,0.12)' : photoVerdict.tone === 'warn' ? 'rgba(245,158,11,0.12)' : 'var(--surface-2)', border: `1px solid ${photoVerdict.tone === 'good' ? 'rgba(34,197,94,0.35)' : photoVerdict.tone === 'warn' ? AMBER + '50' : 'var(--border-3)'}` }}>
@@ -618,12 +742,30 @@ export default function DescribeIssue() {
               </div>
             </div>
           )}
-          {(estimateLoading || photoChecking) ? (
+          {estimateLoading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-lo)', fontSize: 13, padding: '4px 0 8px' }}>
-              <span style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${AMBER}40`, borderTopColor: AMBER, display: 'inline-block', animation: 'di-spin 0.8s linear infinite' }} />
-              {photoChecking ? 'MOTOBOT is checking your photo…' : 'MOTOBOT is checking typical Kampala prices…'}
+              <span style={{ width: 18, height: 18, borderRadius: '50%', border: `2.5px solid ${AMBER}33`, borderTopColor: AMBER, display: 'inline-block', animation: 'di-spin 0.7s linear infinite', flexShrink: 0 }} />
+              MOTOBOT is checking typical Kampala prices…
             </div>
-          ) : (() => {
+          ) : photoMismatch ? (
+            <div style={{ display: 'flex', gap: 8, padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)' }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>🚫</span>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-hi)', marginBottom: 2 }}>That photo doesn’t match your issue</div>
+                <div style={{ fontSize: 12, color: 'var(--text-md)', lineHeight: 1.45 }}>{photoMismatch}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-lo)', lineHeight: 1.45, marginTop: 4 }}>Upload a photo of the actual problem to get a price recommendation.</div>
+              </div>
+            </div>
+          ) : (
+          <>
+          {photoChecking && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: AMBRD, fontSize: 12.5, fontWeight: 700, padding: '2px 0 12px' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', border: `2.5px solid ${AMBER}33`, borderTopColor: AMBER, display: 'inline-block', animation: 'di-spin 0.7s linear infinite', flexShrink: 0 }} />
+              MOTOBOT is checking your photo…
+            </div>
+          )}
+          <div style={{ opacity: photoChecking ? 0.4 : 1, transition: 'opacity 0.2s' }}>
+          {(() => {
             const parts = estimate?.required_parts ?? []
             const partsMin = parts.reduce((s, p) => s + (p.price_min || 0), 0)
             const partsMax = parts.reduce((s, p) => s + (p.price_max || 0), 0)
@@ -635,44 +777,70 @@ export default function DescribeIssue() {
             const replaceMax = partsMax + feeMax
             const hasRepair = repairMax > 0
             const hasReplace = replaceMax > 0
+            const recRepair  = photoChecked && photoVerdict?.rec === 'repair'
+            const recReplace = photoChecked && photoVerdict?.rec === 'replace'
             if (!hasRepair && !hasReplace) return (
               <p style={{ fontSize: 12.5, color: 'var(--text-lo)', lineHeight: 1.5 }}>This one needs an on-site check — your provider will confirm the cost with you before any work begins.</p>
             )
             return (
               <>
                 {hasRepair && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.3)', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(34,197,94,0.10)', border: recRepair ? '1.5px solid #16A34A' : '1px solid rgba(34,197,94,0.3)', boxShadow: recRepair ? '0 0 0 3px rgba(34,197,94,0.15)' : 'none', marginBottom: 10 }}>
                     <div>
-                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#16A34A' }}>If it can be repaired</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#16A34A' }}>{recRepair ? 'Repairable — no new part needed' : 'If it can be repaired'}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-lo)', marginTop: 2 }}>Minor on-site fix — no new part</div>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: '#16A34A', whiteSpace: 'nowrap' }}>{rng(repairMin, repairMax)}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: '#16A34A', whiteSpace: 'nowrap' }}>{rng(repairMin, repairMax)}</div>
+                      {recRepair && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', color: '#fff', background: '#16A34A', borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap' }}>✓ MOTOBOT RECOMMENDS</span>}
+                    </div>
                   </div>
                 )}
                 {hasReplace && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.10)', border: `1px solid ${AMBER}40` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.10)', border: recReplace ? `1.5px solid ${AMBER}` : `1px solid ${AMBER}40`, boxShadow: recReplace ? `0 0 0 3px ${AMBER}26` : 'none' }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 800, color: AMBRD }}>If a new part is needed</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: AMBRD }}>{recReplace ? 'A new part is needed' : 'If a new part is needed'}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-lo)', marginTop: 2 }}>{(parts.length ? parts.map(p => p.name).join(', ') : 'Replacement part')} + fitting</div>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: AMBRD, whiteSpace: 'nowrap' }}>{rng(replaceMin, replaceMax)}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: AMBRD, whiteSpace: 'nowrap' }}>{rng(replaceMin, replaceMax)}</div>
+                      {recReplace && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', color: '#fff', background: AMBRD, borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap' }}>✓ MOTOBOT RECOMMENDS</span>}
+                    </div>
                   </div>
                 )}
-                <p style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.55, marginTop: 11 }}>We can't see the exact damage from here — the mechanic inspects on arrival and confirms the price. You only pay for a new part if a repair won't hold. Rough Kampala estimates, not a binding quote.</p>
+                <p style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.55, marginTop: 11 }}>{photoChecked
+                  ? 'Refined from your photo — the mechanic still confirms the final price on arrival. You only pay for a new part if a repair won’t hold. Rough Kampala estimates, not a binding quote.'
+                  : 'We can’t see the exact damage from here — the mechanic inspects on arrival and confirms the price. You only pay for a new part if a repair won’t hold. Rough Kampala estimates, not a binding quote.'}</p>
               </>
             )
           })()}
+          </div>
+          </>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, padding: '11px 0', borderRadius: 12, border: `1.5px dashed ${AMBER}66`, background: 'rgba(245,158,11,0.06)', color: AMBRD, fontSize: 12.5, fontWeight: 800, cursor: photoChecking ? 'wait' : 'pointer' }}>
-            📷 {photoChecking ? 'Checking your photo…' : photoChecked ? 'Add a different photo' : 'Add a photo of the problem for a sharper estimate'}
+            📷 {photoChecking ? 'Checking your photo…' : photoMismatch ? 'Upload a photo of the actual problem' : betterPhotoHint ? 'Add a clearer photo (different angle)' : photoChecked ? 'Add a different photo' : 'Add a photo for the most accurate estimate'}
             <input type="file" accept="image/*" disabled={photoChecking || dispatchPhase !== 'idle'} style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handlePhoto(f); e.currentTarget.value = '' }} />
           </label>
           {photoError && (
             <p style={{ fontSize: 11.5, color: '#EF4444', fontWeight: 600, lineHeight: 1.5, marginTop: 8 }}>{photoError}</p>
           )}
+          {betterPhotoHint && !photoError && (
+            <p style={{ fontSize: 11.5, color: AMBRD, fontWeight: 600, lineHeight: 1.5, marginTop: 8 }}>
+              📸 {betterPhotoHint}
+            </p>
+          )}
+          {samePhoto && !photoError && !betterPhotoHint && (
+            <p style={{ fontSize: 11.5, color: AMBRD, fontWeight: 600, lineHeight: 1.5, marginTop: 8 }}>
+              📷 That's the same photo as before — MOTOBOT re-checked it for you. Upload a different angle if you'd like a fresh read.
+            </p>
+          )}
         </div>
 
         {/* Action buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 24 }}>
+          {submitError && (
+            <p style={{ color: SOS, fontSize: 12.5, fontWeight: 600, lineHeight: 1.5, textAlign: 'center', margin: '0 0 2px' }}>{submitError}</p>
+          )}
           <button
             onClick={() => handleSubmit()}
             disabled={dispatchPhase !== 'idle'}
@@ -718,6 +886,10 @@ export default function DescribeIssue() {
           70%  { transform: scale(2.6); opacity: 0; }
           100% { opacity: 0; }
         }
+        /* di-spin also lives in DispatchOverlay, but that only mounts during
+           dispatch — define it here too so the estimate-card ring spins while
+           MOTOBOT cross-checks the photo. */
+        @keyframes di-spin { to { transform: rotate(360deg); } }
         @keyframes card-pop {
           0%   { opacity: 0; transform: translateY(14px) scale(0.96); }
           60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }

@@ -32,6 +32,15 @@ class DiagnosisResult(BaseModel):
     # Image relevance (for /diagnose/image): False if the photo isn't a vehicle or doesn't match the issue.
     image_relevant: Optional[bool] = Field(None, description="Whether an uploaded photo is relevant to the issue")
     image_feedback: Optional[str] = Field(None, description="Message to the driver when the photo is not usable")
+    # Repair-vs-replace verdict — decided from an uploaded photo (/diagnose/image):
+    #   'repair'  = a fix will genuinely hold, no new part needed
+    #   'replace' = damage too deep/structural; a new part is genuinely required (repair_fee set to 0)
+    #   'inspect' = cannot be settled from the photo; mechanic confirms on arrival
+    repair_or_replace: Optional[str] = Field(None, description="repair | replace | inspect — photo-based recommendation")
+    repair_or_replace_reason: Optional[str] = Field(None, description="One-line justification grounded in the visible damage")
+    # True when the photo IS the right subject but too unclear (blur/angle/lighting/distance) to assess —
+    # the driver is asked for a clearer shot from a different angle (message goes in image_feedback).
+    needs_better_photo: Optional[bool] = Field(None, description="Right subject but unclear — ask for a clearer photo from a different angle")
 
 
 class ChatMessage(BaseModel):
