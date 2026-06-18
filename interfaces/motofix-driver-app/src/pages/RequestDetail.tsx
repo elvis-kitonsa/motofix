@@ -11,6 +11,7 @@ import { useLoadScript, GoogleMap, Marker, Polyline } from '@react-google-maps/a
 import { requestsService, paymentsService, mechanicService, chatService } from '@/config/api';
 import type { MechanicPublicProfile } from '@/config/api';
 import MechanicAssignedCard from '@/components/MechanicAssignedCard';
+import FinalPaymentFlow from '@/components/FinalPaymentFlow';
 import { toast } from 'sonner';
 import { reverseGeocode, isCoordString, parseCoordString } from '@/utils/geocode';
 import { useRequests, Request } from '@/contexts/RequestContext';
@@ -663,7 +664,7 @@ export default function RequestDetail() {
   const bubbleHasDraggedRef = useRef(false);
 
   // Unread chat-message count shown on the floating mechanic bubble.
-  const { lastMessage: chatWsMessage } = useWS();
+  const { lastMessage: chatWsMessage, sendMessage: wsSend } = useWS();
   const [chatUnread, setChatUnread] = useState(0);
 
   // Pull the true unread count from the server when the mechanic is assigned
@@ -844,6 +845,15 @@ export default function RequestDetail() {
         duration: 8000,
         icon: '🔧',
       });
+    }
+    // Job completed (e.g. mechanic confirmed payment received) → queue the rating prompt.
+    if (prev && prev !== 'completed' && request.status === 'completed') {
+      try {
+        sessionStorage.setItem('motofix_pending_review', JSON.stringify({
+          requestId: String(id),
+          mechanicName: (request as any).mechanic_name ?? 'your mechanic',
+        }));
+      } catch {}
     }
     if (prev === 'pending' && request.status === 'accepted') {
       setAcceptedNotif(true);
@@ -1622,23 +1632,39 @@ export default function RequestDetail() {
           </div>
         )}
 
-        {/* Confirmation — the mechanic (or system) marked the job done, driver confirms */}
+        {/* Confirmation — the mechanic marked the job done. When they sent a final
+            bill (actual_fee), run the full pay-then-confirm flow; otherwise fall back
+            to the simple "confirm job done" card. */}
         {request.status === 'awaiting_confirmation' && request.completion_by !== 'driver' && (
-          <ConfirmJobCard
-            onConfirm={async () => {
-              await requestsService.updateStatus(id!, 'completed');
-              // Optimistically reflect completion so the timeline ticks through immediately
-              setRequest(prev => prev ? { ...prev, status: 'completed', completed_at: prev.completed_at ?? new Date().toISOString() } : prev);
-              try {
-                sessionStorage.setItem('motofix_pending_review', JSON.stringify({
-                  requestId: String(id),
-                  mechanicName: (request as any).mechanic_name ?? 'your mechanic',
-                }));
-              } catch {}
-              toast.success('Job confirmed. Thank you!');
-            }}
-            onDecline={() => toast('Sort it out with the mechanic and tap "Yes, Job is Done" when ready.', { duration: 4000 })}
-          />
+          request.actual_fee != null ? (
+            <FinalPaymentFlow
+              requestId={String(id)}
+              amountDue={Number(request.actual_fee) || 0}
+              mechanicName={(request as any).mechanic_name ?? 'your mechanic'}
+              mechanicPhone={mechanicPhone}
+              serviceNote={(request as any).service_note ?? null}
+              sendMessage={wsSend}
+              lastMessage={chatWsMessage}
+              onPaid={markFeePaid}
+              onMessageMechanic={() => navigate(`/requests/${id}/chat`)}
+            />
+          ) : (
+            <ConfirmJobCard
+              onConfirm={async () => {
+                await requestsService.updateStatus(id!, 'completed');
+                // Optimistically reflect completion so the timeline ticks through immediately
+                setRequest(prev => prev ? { ...prev, status: 'completed', completed_at: prev.completed_at ?? new Date().toISOString() } : prev);
+                try {
+                  sessionStorage.setItem('motofix_pending_review', JSON.stringify({
+                    requestId: String(id),
+                    mechanicName: (request as any).mechanic_name ?? 'your mechanic',
+                  }));
+                } catch {}
+                toast.success('Job confirmed. Thank you!');
+              }}
+              onDecline={() => toast('Sort it out with the mechanic and tap "Yes, Job is Done" when ready.', { duration: 4000 })}
+            />
+          )
         )}
 
         {/* Waiting — the DRIVER marked it done, now waiting on the mechanic to confirm */}
