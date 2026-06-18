@@ -1,7 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import type { ElementType } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import SelfFixGuides from "@/components/SelfFixGuides";
+import OrderPartsShop from "@/components/OrderPartsShop";
 import { useLoadScript, GoogleMap, Marker, DirectionsRenderer } from "@react-google-maps/api";
-import { ArrowLeft, Phone, Star, MapPin, X, Navigation, ShoppingBag, Loader2, ChevronRight, MessageCircle, ReceiptText, Clock, Store, Plus, Check, Wrench, Cog, Bot, Hammer, Disc3, Settings, Truck } from "lucide-react";
+import { ArrowLeft, Phone, Star, MapPin, X, Navigation, ShoppingBag, Loader2, ChevronRight, MessageCircle, ReceiptText, Clock, Store, Plus, Check, Wrench, Bot, Truck } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { partsService, motobotService, PartsOrder, PartPriceItem } from "@/config/api";
@@ -128,229 +131,8 @@ function Stars({ rating, size = 12 }: { rating: number; size?: number }) {
   );
 }
 
-// ── MOTOBOT — white robot, dark face, glowing amber eyes + chest logo (no legs) ─
-function MotoBot({ pose }: { pose: Pose }) {
-  const cap = pose === "grad",
-    shades = pose === "grad",
-    magnifier = pose === "detective" || pose === "scan";
-  const thought = pose === "think",
-    thumbs = pose === "ready",
-    files = pose === "files",
-    wave = pose === "wave",
-    salute = pose === "salute",
-    curious = pose === "curious",
-    scan = pose === "scan";
-  const restRight = !wave && !salute && !thumbs && !thought && !magnifier && !files && !curious; // right arm rests at side (grad)
-  return (
-    <svg width="100%" viewBox="0 0 280 300" fill="none" style={{ overflow: "visible" }}>
-      <defs>
-        <linearGradient id="mbWhite" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#E5EAF1" />
-        </linearGradient>
-        <linearGradient id="mbWhiteSide" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#D9DFE8" />
-        </linearGradient>
-        <linearGradient id="mbVisor" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#2b2b35" />
-          <stop offset="1" stopColor="#0d0d14" />
-        </linearGradient>
-        <radialGradient id="mbEye" cx="0.5" cy="0.42" r="0.62">
-          <stop offset="0" stopColor="#FFF1C9" />
-          <stop offset="0.45" stopColor="#FBBF24" />
-          <stop offset="1" stopColor="#F59E0B" />
-        </radialGradient>
-        <radialGradient id="mbTip" cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" stopColor="#FFE9A8" />
-          <stop offset="1" stopColor="#F59E0B" />
-        </radialGradient>
-        <radialGradient id="mbAura" cx="0.5" cy="0.5" r="0.6">
-          <stop offset="0" stopColor="rgba(245,158,11,0.26)" />
-          <stop offset="1" stopColor="rgba(245,158,11,0)" />
-        </radialGradient>
-      </defs>
 
-      <ellipse cx="140" cy="150" rx="132" ry="146" fill="url(#mbAura)" />
-      <ellipse cx="140" cy="286" rx="62" ry="11" fill="#000" opacity="0.12" />
-
-      {/* resting LEFT arm (behind body) */}
-      {!files && (
-        <g>
-          <rect x="84" y="166" width="22" height="58" rx="11" fill="url(#mbWhiteSide)" transform="rotate(9 95 195)" />
-          <circle cx="88" cy="226" r="13" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-        </g>
-      )}
-      {/* resting RIGHT arm (graduation pose) */}
-      {restRight && (
-        <g>
-          <rect x="174" y="166" width="22" height="58" rx="11" fill="url(#mbWhiteSide)" transform="rotate(-9 185 195)" />
-          <circle cx="192" cy="226" r="13" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-        </g>
-      )}
-
-      {/* body — rounded white pod, no legs */}
-      <path d="M99 176 Q99 156 122 154 L158 154 Q181 156 181 176 L177 246 Q172 280 140 280 Q108 280 103 246 Z" fill="url(#mbWhite)" />
-      <path d="M99 176 Q99 156 122 154 L132 154 L126 279 Q108 276 103 246 Z" fill="#fff" opacity="0.45" />
-      <path d="M112 159 Q140 150 168 159" stroke={AMBER} strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.85" />
-      {/* chest badge + MOTOFIX logo */}
-      <circle cx="140" cy="206" r="25" fill="#fff" stroke={AMBER} strokeWidth="2.5" />
-      <image href="/motofix-logo.png" x="120" y="186" width="40" height="40" preserveAspectRatio="xMidYMid meet" />
-
-      {/* antenna (thin, right) — hidden under cap */}
-      {!cap && (
-        <>
-          <line x1="150" y1="36" x2="158" y2="18" stroke={AMBER} strokeWidth="3.2" strokeLinecap="round" />
-          <circle className="mb-ant" cx="159" cy="15" r="6" fill="url(#mbTip)" />
-        </>
-      )}
-      {/* ears */}
-      <rect x="60" y="84" width="11" height="28" rx="5.5" fill={AMBER} />
-      <rect x="209" y="84" width="11" height="28" rx="5.5" fill={AMBER} />
-      {/* head (white frame) */}
-      <rect x="68" y="34" width="144" height="122" rx="46" fill="url(#mbWhite)" />
-      <path d="M92 52 Q140 40 188 52" stroke="#fff" strokeWidth="8" strokeLinecap="round" opacity="0.7" />
-      {/* dark face screen */}
-      <rect x="84" y="52" width="112" height="90" rx="32" fill="url(#mbVisor)" />
-      <rect x="94" y="60" width="40" height="12" rx="6" fill="#fff" opacity="0.08" />
-      {/* eyes / shades + smile */}
-      {shades ? (
-        <g>
-          <rect x="100" y="80" width="34" height="22" rx="10" fill="#08080e" />
-          <rect x="146" y="80" width="34" height="22" rx="10" fill="#08080e" />
-          <rect x="130" y="88" width="20" height="5" rx="2.5" fill={AMBER} />
-          <rect x="105" y="84" width="11" height="4" rx="2" fill="#5b6472" />
-          <rect x="151" y="84" width="11" height="4" rx="2" fill="#5b6472" />
-        </g>
-      ) : (
-        <>
-          <g className="mb-eye">
-            <ellipse cx="116" cy="94" rx="15" ry="18" fill="url(#mbEye)" />
-            <circle cx="121" cy="87" r="5" fill="#fff" />
-            <ellipse cx="164" cy="94" rx="15" ry="18" fill="url(#mbEye)" />
-            <circle cx="169" cy="87" r="5" fill="#fff" />
-          </g>
-          <path d="M122 118 Q140 132 158 118" stroke={AMBER} strokeWidth="5" fill="none" strokeLinecap="round" />
-        </>
-      )}
-
-      {/* curious raised brows */}
-      {curious && (
-        <g>
-          <line x1="104" y1="76" x2="124" y2="70" stroke={AMBER} strokeWidth="3.2" strokeLinecap="round" />
-          <line x1="156" y1="70" x2="176" y2="76" stroke={AMBER} strokeWidth="3.2" strokeLinecap="round" />
-        </g>
-      )}
-      {/* graduation cap */}
-      {cap && (
-        <g>
-          <rect x="124" y="22" width="32" height="9" rx="3" fill="#1b2147" />
-          <polygon points="140,4 186,24 140,44 94,24" fill="#1b2147" />
-          <polygon points="140,7 179,24 140,41 101,24" fill="#2e3566" />
-          <line x1="174" y1="24" x2="181" y2="44" stroke={AMBER} strokeWidth="3" />
-          <circle cx="181" cy="46" r="5" fill={AMBER} />
-        </g>
-      )}
-      {/* thought bubble */}
-      {thought && (
-        <g className="mb-think">
-          <circle cx="206" cy="48" r="5" fill="#fff" />
-          <circle cx="218" cy="36" r="8" fill="#fff" />
-          <circle cx="236" cy="22" r="16" fill="#fff" />
-          <text x="236" y="28" textAnchor="middle" fontSize="19" fontWeight="800" fill={AMBER_D}>
-            ?
-          </text>
-        </g>
-      )}
-
-      {/* ── ACTION RIGHT ARM (our-right) — white, varies per pose ── */}
-      {wave && (
-        <g className="mb-wavebig" style={{ transformOrigin: "182px 172px" }}>
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="183" y="98" width="20" height="66" rx="10" fill="url(#mbWhiteSide)" transform="rotate(17 193 131)" />
-          <circle cx="212" cy="94" r="15" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-          <circle cx="212" cy="94" r="7" fill={AMBER} opacity="0.35" />
-        </g>
-      )}
-      {curious && (
-        <g style={{ transformOrigin: "182px 172px" }}>
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="186" y="120" width="19" height="56" rx="9.5" fill="url(#mbWhiteSide)" transform="rotate(40 195 148)" />
-          <circle cx="222" cy="120" r="14" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-        </g>
-      )}
-      {salute && (
-        <g className="mb-salute" style={{ transformOrigin: "182px 172px" }}>
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="172" y="64" width="18" height="80" rx="9" fill="url(#mbWhiteSide)" transform="rotate(8 181 104)" />
-          <rect x="138" y="50" width="46" height="15" rx="7" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2" transform="rotate(-8 161 57)" />
-        </g>
-      )}
-      {thumbs && (
-        <g style={{ transformOrigin: "182px 172px" }}>
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="184" y="112" width="19" height="52" rx="9.5" fill="url(#mbWhiteSide)" transform="rotate(13 193 138)" />
-          <circle cx="205" cy="112" r="14" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-          <rect x="199" y="86" width="12" height="28" rx="6" fill={AMBER} />
-        </g>
-      )}
-      {thought && (
-        <g className="mb-chin">
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="156" y="120" width="52" height="17" rx="8.5" fill="url(#mbWhiteSide)" transform="rotate(-26 183 128)" />
-          <ellipse cx="150" cy="122" rx="15" ry="13" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-        </g>
-      )}
-      {magnifier && (
-        <g>
-          <circle cx="181" cy="170" r="13" fill="url(#mbWhite)" />
-          <rect x="180" y="110" width="19" height="50" rx="9.5" fill="url(#mbWhiteSide)" transform="rotate(18 189 135)" />
-          <circle cx="202" cy="108" r="12" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2.5" />
-          <g className="mb-tool" style={{ transformOrigin: "202px 108px" }}>
-            <g transform="translate(208,96) rotate(26)">
-              <circle r="16" fill="#bcd4ff" opacity="0.35" stroke="#e5e7eb" strokeWidth="5" />
-              <rect x="-4" y="14" width="8" height="22" rx="4" fill="#cbd5e1" />
-            </g>
-          </g>
-        </g>
-      )}
-      {/* scanning radar pulse (processing) */}
-      {scan && (
-        <g>
-          <circle className="mb-radar" cx="210" cy="96" r="13" fill="none" stroke={AMBER} strokeWidth="2.5" style={{ transformOrigin: "210px 96px" }} />
-          <circle className="mb-radar2" cx="210" cy="96" r="13" fill="none" stroke={AMBER} strokeWidth="2.5" style={{ transformOrigin: "210px 96px" }} />
-        </g>
-      )}
-
-      {/* reading — both arms forward holding an open book with flipping pages */}
-      {files && (
-        <g>
-          <rect x="100" y="150" width="19" height="46" rx="9.5" fill="url(#mbWhiteSide)" transform="rotate(34 109 173)" />
-          <rect x="161" y="150" width="19" height="46" rx="9.5" fill="url(#mbWhiteSide)" transform="rotate(-34 170 173)" />
-          <path d="M140 182 L98 174 Q94 173 94 178 L94 210 Q94 215 98 214 L140 220 Z" fill="#B45309" />
-          <path d="M140 182 L182 174 Q186 173 186 178 L186 210 Q186 215 182 214 L140 220 Z" fill="#B45309" />
-          <path d="M140 185 L104 178 L104 210 L140 217 Z" fill="#ffffff" />
-          <path d="M140 185 L176 178 L176 210 L140 217 Z" fill="#ffffff" />
-          <g stroke="#d6dbe2" strokeWidth="2" strokeLinecap="round">
-            <line x1="111" y1="188" x2="133" y2="192" />
-            <line x1="111" y1="195" x2="133" y2="199" />
-            <line x1="112" y1="202" x2="131" y2="205" />
-            <line x1="147" y1="192" x2="169" y2="188" />
-            <line x1="147" y1="199" x2="169" y2="195" />
-            <line x1="149" y1="205" x2="168" y2="202" />
-          </g>
-          <rect x="138" y="183" width="4" height="35" rx="1" fill="#92400e" />
-          <path className="mb-page" d="M140 185 L176 178 L176 210 L140 217 Z" fill="#FEF3C7" stroke="#e5e7eb" strokeWidth="1" style={{ transformOrigin: "140px 200px" }} />
-          <path className="mb-page2" d="M140 185 L176 178 L176 210 L140 217 Z" fill="#fffbeb" stroke="#e5e7eb" strokeWidth="1" style={{ transformOrigin: "140px 200px" }} />
-          <ellipse cx="103" cy="196" rx="13" ry="11" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2" />
-          <ellipse cx="177" cy="196" rx="13" ry="11" fill="url(#mbWhite)" stroke={AMBER} strokeWidth="2" />
-        </g>
-      )}
-    </svg>
-  );
-}
-
-type Stage = "intro" | "meet" | "questions" | "processing" | "results" | "cart";
+type Stage = "questions" | "processing" | "results" | "cart";
 
 // ── MOTOFIX circular-rings scanning splash (same look as the mechanic-request animation) ──
 function RingsScanner() {
@@ -400,7 +182,8 @@ export default function SparePartsDealer() {
   const firstName = user?.full_name?.trim().split(/\s+/)[0] || "there";
   const preOrder = routeState?.order;
 
-  const [stage, setStage] = useState<Stage>(preOrder?.parts?.length ? "processing" : "intro");
+  const [stage, setStage] = useState<Stage>(preOrder?.parts?.length ? "processing" : "questions");
+  const [tab, setTab] = useState<"selffix" | "parts">("parts");
   const [qIndex, setQIndex] = useState(0);
   const [picked, setPicked] = useState<string[]>([]);
   const [customItems, setCustomItems] = useState<string[]>([]);
@@ -424,10 +207,6 @@ export default function SparePartsDealer() {
 
   const items = useMemo(() => [...picked, ...customItems], [picked, customItems]);
   const q = QUESTIONS[qIndex];
-  const pose: Pose = stage === "processing" ? "scan" : stage === "intro" ? "wave" : stage === "meet" ? "salute" : (q?.pose ?? "ready");
-
-  // Welcome splash auto-advances into the questions.
-  // Welcome + "meet MOTOBOT" are merged into one intro screen — advances on the button, no auto-timer.
 
   const togglePick = (p: string) => setPicked((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
   const addCustom = () => {
@@ -675,261 +454,83 @@ export default function SparePartsDealer() {
   const textLo = "var(--text-dim)";
   const border = "var(--border-2)";
 
-  // ════════ INTRO + QUESTIONS + PROCESSING (amber/white scene, on-brand) ════════
-  if (stage === "intro" || stage === "meet" || stage === "questions" || stage === "processing") {
-    const big = stage === "intro" || stage === "meet";
-    const robotW = stage === "processing" ? "clamp(225px,50vw,312px)" : big ? "clamp(205px,46vw,290px)" : "clamp(180px,40vw,256px)";
-    const zoneH = stage === "processing" ? "clamp(240px,42vh,370px)" : big ? "clamp(220px,38vh,340px)" : "clamp(200px,32vh,310px)";
-    const BG_ICONS = [
-      { Icon: Wrench, left: "5%", top: "13%", size: 86, rot: -18, op: 0.1, blur: 2, c: AMBER },
-      { Icon: Cog, left: "80%", top: "9%", size: 116, rot: 12, op: 0.09, blur: 3, c: "#9aa6b8" },
-      { Icon: Bot, left: "79%", top: "60%", size: 98, rot: -8, op: 0.11, blur: 2.5, c: AMBER },
-      { Icon: Settings, left: "8%", top: "64%", size: 96, rot: 20, op: 0.08, blur: 3, c: "#9aa6b8" },
-      { Icon: Hammer, left: "45%", top: "6%", size: 64, rot: 32, op: 0.07, blur: 2.5, c: AMBER },
-      { Icon: Disc3, left: "38%", top: "80%", size: 82, rot: 0, op: 0.08, blur: 3, c: "#9aa6b8" },
-      { Icon: Wrench, left: "90%", top: "38%", size: 58, rot: 48, op: 0.08, blur: 2, c: AMBER },
-      { Icon: Cog, left: "3%", top: "40%", size: 72, rot: -24, op: 0.08, blur: 2.5, c: "#9aa6b8" },
-      { Icon: Bot, left: "14%", top: "87%", size: 60, rot: 10, op: 0.08, blur: 2, c: AMBER },
-    ];
-    // Robot glides to a new spot for each question — it "moves around" the zone.
+  // ════════ PROCESSING — full-screen scanner ════════
+  if (stage === "processing") {
     return (
       <div style={{ position: "fixed", inset: 0, overflow: "hidden", background: pageBg, display: "flex", flexDirection: "column" }}>
-        {/* warm amber glow + particles */}
-        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(90% 52% at 50% 2%, rgba(245,158,11,0.20), transparent 60%)", pointerEvents: "none" }} />
-        {[
-          { l: "10%", t: "30%", s: 9, d: "0s" },
-          { l: "86%", t: "34%", s: 11, d: "1.2s" },
-          { l: "16%", t: "60%", s: 7, d: "0.6s" },
-          { l: "88%", t: "66%", s: 9, d: "1.7s" },
-        ].map((p, i) => (
-          <span key={i} style={{ position: "absolute", left: p.l, top: p.t, width: p.s, height: p.s, borderRadius: "50%", background: AMBER, opacity: 0.3, animation: `mb-drift ${5 + i}s ${p.d} ease-in-out infinite`, pointerEvents: "none" }} />
-        ))}
-        {/* floating mechanical motifs — blurry but visible ambient background */}
-        <div style={{ position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none", overflow: "hidden" }}>
-          {BG_ICONS.map((b, i) => {
-            const Icon = b.Icon;
+        <div style={{ position: "relative", zIndex: 5, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+          <button onClick={() => setStage("questions")} style={{ width: 36, height: 36, borderRadius: 10, border: "none", cursor: "pointer", background: surface, color: textHi, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ArrowLeft size={18} />
+          </button>
+          <div style={{ flex: 1, fontSize: 12, fontWeight: 800, letterSpacing: "0.26em", color: AMBER_D }}>MOTOFIX · MOTOBOT</div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 18px 26px" }}>
+          <div style={{ maxWidth: 380, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <RingsScanner />
+            <h2 style={{ fontSize: 21, fontWeight: 900, color: textHi, margin: "22px 0 18px", textAlign: "center" }}>Finding spare-part dealers near you…</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 13, alignItems: "flex-start" }}>
+              {PROC_MSGS.map((m, i) => {
+                const done = i < procMsg;
+                const active = i === procMsg;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, opacity: done || active ? 1 : 0.42, transition: "opacity 0.35s" }}>
+                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: done ? AMBER : "transparent", border: done ? "none" : `2px solid ${active ? AMBER : textLo}` }}>
+                      {done ? <Check size={15} style={{ color: "#fff" }} /> : active ? <Loader2 size={15} className="mb-spin" style={{ color: AMBER_D }} /> : <span style={{ width: 7, height: 7, borderRadius: "50%", background: textLo }} />}
+                    </span>
+                    <span style={{ fontSize: 14.5, fontWeight: done || active ? 700 : 600, color: done ? textHi : active ? AMBER_D : textMd }}>{m}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <Styles />
+      </div>
+    );
+  }
+
+  // ════════ HUB — Self-Fix guides · MOTOBOT · Order parts (resembles the mechanic app) ════════
+  if (stage === "questions") {
+    const TABS: { id: "selffix" | "motobot" | "parts"; label: string; Icon: ElementType }[] = [
+      { id: "selffix", label: "Self-Fix", Icon: Wrench },
+      { id: "motobot", label: "MOTOBOT", Icon: Bot },
+      { id: "parts", label: "Order Parts", Icon: ShoppingBag },
+    ];
+    return (
+      <div style={{ position: "fixed", inset: 0, background: pageBg, display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "var(--header-bg)", borderBottom: `1px solid ${border}`, flexShrink: 0, paddingTop: "max(14px, env(safe-area-inset-top, 14px))" }}>
+          <button onClick={() => navigate(-1)} style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: surface2, border: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <ArrowLeft style={{ width: 18, height: 18, color: textHi }} />
+          </button>
+          <div style={{ flex: 1 }}>
+            <p style={{ color: textHi, fontWeight: 900, fontSize: 17, lineHeight: 1 }}>Spare Parts &amp; Self-Fix</p>
+            <p style={{ color: textLo, fontSize: 11, marginTop: 2 }}>Self-fix guides · MOTOBOT · Order parts</p>
+          </div>
+          <div style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: `${AMBER}18`, border: `1px solid ${AMBER}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ShoppingBag style={{ width: 18, height: 18, color: AMBER }} />
+          </div>
+        </div>
+        {/* Tab bar */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${border}`, flexShrink: 0, background: "var(--bg)" }}>
+          {TABS.map(({ id, label, Icon }) => {
+            const active = id !== "motobot" && tab === id;
             return (
-              <div key={i} style={{ position: "absolute", left: b.left, top: b.top, animation: `mb-bgfloat ${11 + (i % 5)}s ${(i * 0.6).toFixed(1)}s ease-in-out infinite` }}>
-                <Icon size={b.size} strokeWidth={1.4} style={{ color: b.c, opacity: b.op, filter: `blur(${b.blur}px)`, transform: `rotate(${b.rot}deg)` }} />
-              </div>
+              <button key={id} onClick={() => { if (id === "motobot") navigate("/fault-chat"); else setTab(id); }} style={{
+                flex: 1, height: 46, background: "transparent", border: "none",
+                borderBottom: active ? `2px solid ${AMBER}` : "2px solid transparent",
+                color: active ? AMBER : textLo, fontWeight: active ? 800 : 600,
+                fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              }}>
+                <Icon style={{ width: 15, height: 15 }} /> {label}
+              </button>
             );
           })}
         </div>
-
-        {/* top bar */}
-        <div style={{ position: "relative", zIndex: 5, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
-          <button onClick={() => navigate(-1)} style={{ width: 36, height: 36, borderRadius: 10, border: "none", cursor: "pointer", background: surface, color: textHi, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ArrowLeft size={18} />
-          </button>
-          <div style={{ flex: 1, fontSize: 12, fontWeight: 800, letterSpacing: "0.26em", color: AMBER_D }}>{stage === "intro" ? "MOTOFIX" : "MOTOFIX · MOTOBOT"}</div>
-          {stage === "questions" && (
-            <div style={{ display: "flex", gap: 6 }}>
-              {QUESTIONS.map((_, i) => (
-                <span key={i} style={{ width: i === qIndex ? 20 : 8, height: 8, borderRadius: 4, background: i <= qIndex ? AMBER : "rgba(245,158,11,0.28)", transition: "all 0.3s" }} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* robot zone — only on the welcome/intro screen, where it introduces itself */}
-        {stage === "intro" && (
-          <div style={{ position: "relative", zIndex: 3, flex: "0 0 auto", height: zoneH, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            <div style={{ width: robotW }}>
-              <div className="mb-float" key={pose}>
-                <div className={`mb-act mb-act-${pose}`}>
-                  <MotoBot pose={pose} />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* content zone — fills the page; centred vertically (safe = scrolls from top when tall) */}
-        <div style={{ position: "relative", zIndex: 4, flex: 1, minHeight: 0, overflowY: "auto", padding: "0 18px 26px", display: "flex", flexDirection: "column", justifyContent: stage === "intro" ? "flex-start" : "safe center" }}>
-          {stage === "intro" && (
-            <div style={{ maxWidth: 480, margin: "6px auto 0", textAlign: "center", animation: "mb-qIn 0.5s ease both" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.3em", color: AMBER_D, marginBottom: 10 }}>MEET YOUR ASSISTANT</div>
-              <h1 style={{ fontSize: "clamp(21px,4.8vw,29px)", fontWeight: 900, color: textHi, lineHeight: 1.25, margin: "0 0 12px" }}>
-                Welcome to the <span style={{ color: AMBER_D }}>Spare Parts</span> Shopping &amp; Ordering Section
-              </h1>
-              <p style={{ fontSize: 14, color: textMd, lineHeight: 1.65, margin: "0 0 24px" }}>
-                Hi {firstName}! I'm <strong style={{ color: AMBER_D }}>MOTOBOT</strong>, the AI agent for MOTOFIX. Tell me the spare parts you need and I'll find fair prices and the nearest dealers for you to order from.
-              </p>
-              <button
-                onClick={() => setStage("questions")}
-                style={{
-                  width: "100%",
-                  maxWidth: 320,
-                  height: 54,
-                  borderRadius: 16,
-                  border: "none",
-                  cursor: "pointer",
-                  background: AMBER_GRAD,
-                  color: "#fff",
-                  fontSize: 15.5,
-                  fontWeight: 800,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  boxShadow: "0 10px 28px rgba(245,158,11,0.4)",
-                }}
-              >
-                Click here to order <ChevronRight size={19} />
-              </button>
-            </div>
-          )}
-          {stage === "questions" && q && (
-            <div key={qIndex} style={{ maxWidth: 560, margin: "0 auto", animation: "mb-qIn 0.5s cubic-bezier(0.22,1,0.36,1) both" }}>
-              <div style={{ background: surface, borderRadius: 20, padding: "16px 18px", marginBottom: 14, border: `1px solid ${border}`, boxShadow: "0 12px 36px rgba(0,0,0,0.16)" }}>
-                {qIndex === 0 && <div style={{ fontSize: 12.5, color: AMBER_D, fontWeight: 700, marginBottom: 4 }}>Hi {firstName}! 👋 I'm MOTOBOT.</div>}
-                <div style={{ fontSize: 18, fontWeight: 800, color: textHi, lineHeight: 1.3 }}>{q.text}</div>
-                {q.hint && <div style={{ fontSize: 12, color: textLo, marginTop: 4 }}>{q.hint}</div>}
-              </div>
-
-              {q.type === "multi" ? (
-                <div style={{ background: surface, borderRadius: 20, padding: 14, border: `1px solid ${border}`, boxShadow: "0 12px 36px rgba(0,0,0,0.16)" }}>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: "28vh", overflowY: "auto" }}>
-                    {q.options.map((p) => {
-                      const on = picked.includes(p);
-                      return (
-                        <button
-                          key={p}
-                          onClick={() => togglePick(p)}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: "8px 12px",
-                            borderRadius: 20,
-                            cursor: "pointer",
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                            background: on ? "rgba(245,158,11,0.14)" : "transparent",
-                            color: on ? AMBER_D : textMd,
-                            border: `1.5px solid ${on ? AMBER : border}`,
-                          }}
-                        >
-                          <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: on ? AMBER : "transparent", border: `1.5px solid ${on ? AMBER : textLo}` }}>
-                            {on && <Check size={11} style={{ color: "#fff" }} />}
-                          </span>
-                          {p}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <input
-                      value={otherInput}
-                      onChange={(e) => setOtherInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addCustom();
-                      }}
-                      placeholder="Other — type a part…"
-                      style={{ flex: 1, height: 42, borderRadius: 12, border: `1.5px solid ${border}`, background: surface2, color: textHi, padding: "0 12px", fontSize: 13, outline: "none" }}
-                    />
-                    <button onClick={addCustom} style={{ width: 42, height: 42, borderRadius: 12, border: "none", cursor: "pointer", background: "rgba(245,158,11,0.16)", color: AMBER_D, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Plus size={18} />
-                    </button>
-                  </div>
-                  {customItems.length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                      {customItems.map((c) => (
-                        <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: "rgba(245,158,11,0.16)", color: AMBER_D }}>
-                          {c}
-                          <button onClick={() => removeCustom(c)} style={{ background: "none", border: "none", cursor: "pointer", color: AMBER_D, padding: 0, display: "flex" }}>
-                            <X size={13} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    onClick={advance}
-                    disabled={!items.length}
-                    style={{
-                      width: "100%",
-                      marginTop: 14,
-                      height: 50,
-                      borderRadius: 14,
-                      border: "none",
-                      fontSize: 15,
-                      fontWeight: 800,
-                      cursor: items.length ? "pointer" : "not-allowed",
-                      background: items.length ? AMBER_GRAD : "var(--surface-3)",
-                      color: items.length ? "#fff" : textLo,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                    }}
-                  >
-                    Continue{items.length ? ` (${items.length})` : ""} <ChevronRight size={18} />
-                  </button>
-                </div>
-              ) : (
-                (() => {
-                  const grid = q.options.length > 6; // many options (car brands) → side-by-side grid
-                  return (
-                    <div style={{ display: grid ? "grid" : "flex", gridTemplateColumns: grid ? "repeat(2, 1fr)" : undefined, flexDirection: grid ? undefined : "column", gap: grid ? 8 : 9 }}>
-                      {q.options.map((o) => {
-                        const on = answers[q.id] === o;
-                        return (
-                          <button
-                            key={o}
-                            onClick={() => answerSingle(o)}
-                            style={{
-                              width: "100%",
-                              textAlign: "left",
-                              padding: grid ? "11px 13px" : "13px 16px",
-                              borderRadius: 14,
-                              cursor: "pointer",
-                              fontSize: grid ? 13.5 : 14.5,
-                              fontWeight: 700,
-                              background: surface,
-                              color: textHi,
-                              border: on ? `2px solid ${AMBER}` : `1px solid ${border}`,
-                              boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: grid ? 9 : 12,
-                            }}
-                          >
-                            <span style={{ width: grid ? 17 : 20, height: grid ? 17 : 20, borderRadius: "50%", flexShrink: 0, border: `2px solid ${on ? AMBER : textLo}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              {on && <span style={{ width: grid ? 8 : 10, height: grid ? 8 : 10, borderRadius: "50%", background: AMBER }} />}
-                            </span>
-                            <span style={{ flex: 1 }}>{o}</span>
-                            {!grid && <ChevronRight size={17} style={{ color: AMBER, flexShrink: 0 }} />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()
-              )}
-            </div>
-          )}
-
-          {stage === "processing" && (
-            <div style={{ maxWidth: 380, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <RingsScanner />
-              <h2 style={{ fontSize: 21, fontWeight: 900, color: textHi, margin: "22px 0 18px", textAlign: "center" }}>Finding spare-part dealers near you…</h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: 13, alignItems: "flex-start" }}>
-                {PROC_MSGS.map((m, i) => {
-                  const done = i < procMsg;
-                  const active = i === procMsg;
-                  return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, opacity: done || active ? 1 : 0.42, transition: "opacity 0.35s" }}>
-                      <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: done ? AMBER : "transparent", border: done ? "none" : `2px solid ${active ? AMBER : textLo}` }}>
-                        {done ? <Check size={15} style={{ color: "#fff" }} /> : active ? <Loader2 size={15} className="mb-spin" style={{ color: AMBER_D }} /> : <span style={{ width: 7, height: 7, borderRadius: "50%", background: textLo }} />}
-                      </span>
-                      <span style={{ fontSize: 14.5, fontWeight: done || active ? 700 : 600, color: done ? textHi : active ? AMBER_D : textMd }}>{m}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* Content */}
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          {tab === "selffix" && <SelfFixGuides />}
+          {tab === "parts" && <OrderPartsShop />}
         </div>
         <Styles />
       </div>
