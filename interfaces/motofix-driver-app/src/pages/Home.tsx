@@ -17,6 +17,7 @@ import { requestsService } from '@/config/api';
 import { dueCount } from '@/lib/reminders';
 import { useNotifications } from '@/hooks/useNotifications';
 import ReminderOptInPrompt from '@/components/ReminderOptInPrompt';
+import BackLogoutGuard from '@/components/BackLogoutGuard';
 import { toast } from 'sonner';
 
 /* ── All services (editorial list) ────────────────────────── */
@@ -413,6 +414,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background pb-28 overflow-x-hidden">
+      <BackLogoutGuard onLogout={() => { logout(); navigate('/welcome'); }} />
       <div className="px-4 max-w-md mx-auto">
 
         {/* ── First-run reminders opt-in ── */}

@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import BackLogoutGuard from '@/components/BackLogoutGuard';
 import { HeroCard, ChipCard } from '@/components/dashboard/StatsCard';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { BreakdownHotspotMap } from '@/components/dashboard/BreakdownHotspotMap';
@@ -60,6 +61,7 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout>
+      <BackLogoutGuard />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Error banner */}
