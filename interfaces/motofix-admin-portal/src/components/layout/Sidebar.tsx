@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Wrench, CreditCard,
   Car, ClipboardList, BadgeCheck, Package,
   Settings, HelpCircle, LogOut,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Cpu,
 } from 'lucide-react';
 
 const S = {
@@ -21,6 +21,7 @@ const S = {
 const NAV = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/requests',     icon: Wrench,          label: 'Requests' },
+  { to: '/matching',     icon: Cpu,             label: 'Smart Matching' },
   { to: '/payments',     icon: CreditCard,      label: 'Payments' },
   { to: '/providers',    icon: BadgeCheck,      label: 'Service Providers' },
   { to: '/drivers',      icon: Car,             label: 'Drivers' },

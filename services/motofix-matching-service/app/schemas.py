@@ -21,6 +21,9 @@ class MechanicCandidate(BaseModel):
     fcm_token: Optional[str] = None
     distance_km: float
     total_score: float
+    match_priority: float = 0.0          # 0–100 headline "match priority %"
+    rationale: str = ""                  # one-line human explanation of the score
+    capability_tier: Optional[int] = None
     score_breakdown: Dict[str, float]
     weights: Dict[str, float]
 

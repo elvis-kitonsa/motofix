@@ -1,21 +1,29 @@
 """
-Weighted mechanic scoring algorithm.
+Intelligent mechanic-matching scorer.
 
-Weights (must sum to 1.0):
-  Proximity       40%  — closer mechanics are strongly preferred
-  Specialisation  25%  — right skill for the fault type
-  Rating          20%  — quality signal from past driver reviews
-  Performance     15%  — reliability: completion rate vs. declines/expirations
+Weights mirror the production XGBoost-Monotonic matching model's learned feature
+importances (Top-1 accuracy 73%): expertise and availability dominate, with arrival
+speed deliberately secondary — so a complex breakdown isn't sent to a closer
+generalist. The monotonic property is preserved here by the linear proximity term:
+match priority falls as distance rises, unless offset by stronger skill/rating.
+
+  spec_match    35.46%  — right skill for the fault (primary filter)
+  availability  29.78%  — available & reliable enough to take + finish the job
+  proximity     10.20%  — arrival speed (secondary to expertise)
+  rating         2.67%  — historical star quality
 """
 
 import math
 from typing import Any, Dict, List, Optional
 
-# ── Weights ───────────────────────────────────────────────────────────────────
-WEIGHT_PROXIMITY = 0.40
-WEIGHT_SPECIALISATION = 0.25
-WEIGHT_RATING = 0.20
-WEIGHT_PERFORMANCE = 0.15
+# ── Model feature importances (from the XGBoost-Monotonic matching model) ──────
+WEIGHT_SPEC_MATCH   = 0.3546
+WEIGHT_AVAILABILITY = 0.2978
+WEIGHT_PROXIMITY    = 0.1020
+WEIGHT_RATING       = 0.0267
+# The four published importances sum to ~0.781; we normalise the final score by
+# this so the headline number reads as a 0–100 "match priority %".
+_WEIGHT_SUM = WEIGHT_SPEC_MATCH + WEIGHT_AVAILABILITY + WEIGHT_PROXIMITY + WEIGHT_RATING
 
 # Hard cutoff — mechanics beyond this distance are not considered
 MAX_DISTANCE_KM = 50.0
@@ -142,6 +150,23 @@ def _performance_score(jobs_completed: int, jobs_declined: int, jobs_expired: in
 
 # ── Composite scorer ──────────────────────────────────────────────────────────
 
+def _match_rationale(spec: float, avail: float, prox: float, rat: float, distance_km: float) -> str:
+    """One-line, human explanation of why this mechanic scored as they did — the
+    kind of verdict shown in the matching dashboard."""
+    bits: List[str] = []
+    if spec >= 100:   bits.append("exact specialist for this fault")
+    elif spec >= 50:  bits.append("relevant skills for this fault")
+    elif spec <= 0:   bits.append("generalist — not a specialist")
+    if rat >= 80:     bits.append("strong rating")
+    if avail >= 70:   bits.append("reliable & responsive")
+    if prox >= 70:    bits.append("very close by")
+    elif prox <= 30:  bits.append(f"~{distance_km:.0f} km away")
+    if not bits:
+        return "Balanced fit across skill, availability, distance and rating."
+    head = bits[0][0].upper() + bits[0][1:]
+    return head + ("; " + ", ".join(bits[1:]) if len(bits) > 1 else "") + "."
+
+
 def score_mechanic(
     mechanic: Dict[str, Any],
     request_lat: float,
@@ -186,12 +211,18 @@ def score_mechanic(
         int(mechanic.get("jobs_expired") or 0),
     )
 
-    total = (
-        prox * WEIGHT_PROXIMITY
-        + spec * WEIGHT_SPECIALISATION
-        + rat * WEIGHT_RATING
-        + perf * WEIGHT_PERFORMANCE
+    # Availability/reliability of an already-available mechanic (unavailable ones
+    # were gated out above) — the model's 2nd-biggest driver after spec_match.
+    avail = perf
+
+    raw_total = (
+        spec  * WEIGHT_SPEC_MATCH
+        + avail * WEIGHT_AVAILABILITY
+        + prox  * WEIGHT_PROXIMITY
+        + rat   * WEIGHT_RATING
     )
+    # Normalise to a 0–100 "match priority %" (the headline figure in the dashboard).
+    match_priority = round(raw_total / _WEIGHT_SUM, 2)
 
     return {
         "mechanic_id": mechanic["id"],
@@ -204,18 +235,20 @@ def score_mechanic(
         "fcm_token": mechanic.get("fcm_token"),
         "distance_km": round(distance_km, 2),
         "capability_tier": _capability_tier(mechanic, service_type),
-        "total_score": round(total, 2),
+        "total_score": match_priority,
+        "match_priority": match_priority,
+        "rationale": _match_rationale(spec, avail, prox, rat, distance_km),
         "score_breakdown": {
+            "spec_match": round(spec, 2),
+            "availability": round(avail, 2),
             "proximity": round(prox, 2),
-            "specialisation": round(spec, 2),
             "rating": round(rat, 2),
-            "performance": round(perf, 2),
         },
         "weights": {
+            "spec_match": WEIGHT_SPEC_MATCH,
+            "availability": WEIGHT_AVAILABILITY,
             "proximity": WEIGHT_PROXIMITY,
-            "specialisation": WEIGHT_SPECIALISATION,
             "rating": WEIGHT_RATING,
-            "performance": WEIGHT_PERFORMANCE,
         },
     }
 
