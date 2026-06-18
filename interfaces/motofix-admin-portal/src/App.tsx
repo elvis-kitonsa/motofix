@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Requests from "./pages/Requests";
+import MechanicMatching from "./pages/MechanicMatching";
 import Providers from "./pages/Providers";
 import Payments from "./pages/Payments";
 import Drivers from "./pages/Drivers";
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/requests" element={<Requests />} />
+          <Route path="/matching" element={<MechanicMatching />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/payments" element={<Payments />} />
           <Route path="/drivers" element={<Drivers />} />
