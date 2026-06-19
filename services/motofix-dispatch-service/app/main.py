@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Database pool
 pool: Optional[asyncpg.Pool] = None
 db_error: Optional[str] = None
+_watchdog_task: Optional[asyncio.Task] = None
 
 
 async def run_migrations(db_pool: asyncpg.Pool):
@@ -353,51 +354,61 @@ async def _completion_watchdog():
             logger.warning("completion watchdog error: %s", exc)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global pool, db_error
+async def _connect_with_retry():
+    """Create the DB pool, retrying forever with capped backoff.
+
+    Runs in the background so startup never blocks and — crucially — a Postgres
+    that is slow or still in recovery ("the database system is starting up")
+    can't strand the service in degraded mode permanently. We keep retrying until
+    the DB is ready, so the service self-heals without a manual restart.
+    """
+    global pool, db_error, _watchdog_task
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         db_error = "DATABASE_URL environment variable is not set"
         logger.error(f"❌ {db_error}")
         logger.warning("⚠️  Starting in degraded mode - DB operations will fail gracefully")
-        yield
         return
-    
+
     logger.info(f"🔗 Attempting to connect to database: {dsn[:50]}...")
-    max_retries = 3
-    retry_delay = 2
-    
-    for attempt in range(max_retries):
+    delay = 2
+    attempt = 0
+    while pool is None:
+        attempt += 1
+        new_pool = None
         try:
-            pool = await asyncpg.create_pool(
-                dsn=dsn,
-                min_size=2,
-                max_size=10,
-                command_timeout=10,
-            )
-            logger.info("✅ Database pool created successfully")
+            new_pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=10, command_timeout=10)
+            # Run startup migrations BEFORE publishing the pool, so once `pool` is
+            # set the schema is guaranteed ready for request handlers.
+            await run_migrations(new_pool)
+            pool = new_pool
             db_error = None
-            # Run startup migrations to ensure tables exist
-            await run_migrations(pool)
-            break
+            logger.info(f"✅ Database pool created successfully (attempt {attempt})")
+            # Start the completion safety-net watchdog now that the DB is up.
+            _watchdog_task = asyncio.create_task(_completion_watchdog())
+            return
         except Exception as e:
             db_error = str(e)
-            attempt_msg = f"Attempt {attempt + 1}/{max_retries}"
-            if attempt < max_retries - 1:
-                logger.warning(f"⚠️  DB connection failed ({attempt_msg}): {e}. Retrying in {retry_delay}s...")
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error(f"❌ DB connection failed ({attempt_msg}): {e}")
-                logger.warning("⚠️  Starting in degraded mode - DB operations will fail gracefully")
-    
-    # Start the completion safety-net watchdog (only when the DB is up)
-    watchdog = asyncio.create_task(_completion_watchdog()) if pool else None
+            if new_pool is not None:
+                await new_pool.close()  # don't leak a half-initialised pool
+            logger.warning(f"⚠️  DB connection failed (attempt {attempt}): {e}. Retrying in {delay}s...")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global pool, _watchdog_task
+    # Connect in the background so a slow / recovering Postgres can't permanently
+    # leave us in degraded mode (see _connect_with_retry). Requests that arrive
+    # before the DB is ready still fail gracefully with 503 via get_db().
+    connect_task = asyncio.create_task(_connect_with_retry())
 
     yield
 
-    if watchdog:
-        watchdog.cancel()
+    connect_task.cancel()
+    if _watchdog_task:
+        _watchdog_task.cancel()
     if pool:
         await pool.close()
         logger.info("✅ Database pool closed")
@@ -845,7 +856,7 @@ async def jobs_ws(websocket: WebSocket):
     Broadcasts: 'new_job', 'job_taken', 'status_update', 'chat_message', 'location_update', 'price_quote', 'quote_approved'.
     Clients send JSON; relayed message types are forwarded to all connected clients.
     """
-    _RELAY_TYPES = {"chat_message", "chat_typing", "chat_seen", "location_update", "price_quote", "quote_approved"}
+    _RELAY_TYPES = {"chat_message", "chat_typing", "chat_seen", "location_update", "price_quote", "quote_approved", "payment_completed", "payment_ack"}
     await manager.connect(websocket)
     try:
         while True:
@@ -1030,6 +1041,54 @@ async def _upload_media_background(
                 Path(temp_path).unlink(missing_ok=True)
 
 
+async def _upload_media_sync(request_id: int, files_info: list[tuple[str, str, str]]) -> list[dict]:
+    """Upload files + insert media records NOW (not in the background) and return them,
+    so the new_job broadcast carries the driver's photo — the mechanic then sees it in
+    the incoming-job popup before deciding whether to set off. Best-effort: upload
+    failures don't fail request creation, they just yield no media."""
+    records: list[dict] = []
+    if not pool or not files_info:
+        for tp, _, _ in files_info:
+            Path(tp).unlink(missing_ok=True)
+        return records
+    try:
+        storage = get_storage()
+    except Exception as e:
+        logger.error(f"❌ Sync upload: storage init failed: {e}")
+        for tp, _, _ in files_info:
+            Path(tp).unlink(missing_ok=True)
+        return records
+    async with pool.acquire() as db:
+        for temp_path, filename, file_type in files_info:
+            try:
+                media_info = await storage.upload_file(temp_path, file_type, str(request_id))
+                await db.execute(
+                    """
+                    INSERT INTO media_files
+                    (request_id, file_url, file_type, file_name, size_kb, uploaded_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    request_id,
+                    media_info["url"],
+                    media_info["file_type"],
+                    filename,
+                    media_info["size_kb"],
+                    media_info["uploaded_at"],
+                )
+                records.append({
+                    "url": media_info["url"],
+                    "file_type": media_info["file_type"],
+                    "size_kb": media_info["size_kb"],
+                    "uploaded_at": media_info["uploaded_at"],
+                })
+                logger.info(f"✅ Sync upload: {filename} ({media_info['size_kb']} KB)")
+            except Exception as e:
+                logger.error(f"❌ Sync upload failed for {filename}: {e}")
+            finally:
+                Path(temp_path).unlink(missing_ok=True)
+    return records
+
+
 @app.post("/requests-with-media/", response_model=RequestOut)
 async def create_request_with_media(
     background_tasks: BackgroundTasks,
@@ -1093,7 +1152,9 @@ async def create_request_with_media(
             request_data[k] = request_data[k].isoformat()
     request_data["media_files"] = []
     
-    # Save uploaded files to temp files and run uploads in background (non-blocking)
+    # Save uploaded files to temp, then upload SYNCHRONOUSLY so the photo is attached to
+    # the request BEFORE we broadcast it — the mechanic sees it in the incoming-job popup.
+    # (The driver is watching the dispatch animation meanwhile, so this is not perceptible.)
     if file_list:
         files_info: list[tuple[str, str, str]] = []
         for file in file_list:
@@ -1108,9 +1169,9 @@ async def create_request_with_media(
             except Exception as e:
                 logger.warning(f"Failed to read file {file.filename}: {e}")
         if files_info:
-            background_tasks.add_task(_upload_media_background, request_id, files_info)
-    
-    logger.info(f"✅ Request created: id={request_id}, media will upload in background")
+            request_data["media_files"] = await _upload_media_sync(request_id, files_info)
+
+    logger.info(f"✅ Request created: id={request_id}, media files: {len(request_data.get('media_files') or [])}")
 
     # Broadcast new job event to WebSocket clients
     try:
@@ -2266,7 +2327,7 @@ async def get_stats(db=Depends(get_db)):
 
         try:
             stats["revenue_collected_ugx"] = await db.fetchval(
-                "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status = 'successful'"
+                "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
             ) or 0
         except Exception as e:
             logger.warning(f"Could not fetch revenue_collected_ugx: {e}")
@@ -2290,7 +2351,7 @@ async def get_stats(db=Depends(get_db)):
 
         try:
             stats["commission_earned_ugx"] = await db.fetchval(
-                "SELECT COALESCE(SUM(commission), 0) FROM payments WHERE collection_status = 'successful'"
+                "SELECT COALESCE(SUM(commission), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
             ) or 0
         except Exception as e:
             logger.warning(f"Could not fetch commission_earned_ugx: {e}")
@@ -2338,7 +2399,7 @@ async def get_revenue(days: int = 30, db=Depends(get_db)):
             SELECT to_char(created_at::date, 'YYYY-MM-DD') AS date,
                    COALESCE(SUM(quoted_amount), 0)::bigint AS amount
             FROM payments
-            WHERE collection_status = 'successful'
+            WHERE collection_status IN ('success','successful','cash')
               AND created_at >= NOW() - ($1 || ' days')::interval
             GROUP BY date
             ORDER BY date ASC
@@ -2394,6 +2455,21 @@ MOMO_DIS_API_KEY = os.getenv("MOMO_DISBURSEMENTS_API_KEY", "")
 MOMO_DIS_PRIMARY_KEY = os.getenv("MOMO_DISBURSEMENTS_PRIMARY_KEY", "")
 
 PLATFORM_COMMISSION = 10000  # UGX 10,000 flat commission per job
+
+
+def _momo_network(phone: str | None) -> str:
+    """Best-effort Ugandan MoMo network from a phone number prefix → 'mtn' | 'airtel' | 'momo'."""
+    d = "".join(c for c in (phone or "") if c.isdigit())
+    if d.startswith("256"):
+        d = "0" + d[3:]
+    elif len(d) == 9:
+        d = "0" + d
+    pre = d[:3]
+    if pre in ("077", "078", "076", "039", "031"):
+        return "mtn"
+    if pre in ("070", "075", "074", "020"):
+        return "airtel"
+    return "momo"
 
 
 # ── MoMo Pydantic models ─────────────────────────────────────────────────────
@@ -2928,6 +3004,58 @@ async def pay_cash(request_id: int, user=Depends(get_current_user), db=Depends(g
     )
     logger.info(f"💵 cash payment: request {request_id} marked as cash-paid (payment {payment['id']})")
     return {"detail": "Cash payment recorded", "amount": payment["quoted_amount"]}
+
+
+@app.post("/payments/record/{request_id}", tags=["Payments"])
+async def record_payment(request_id: int, method: str = "momo", user=Depends(get_current_user), db=Depends(get_db)):
+    """Persist a completed (simulated) job payment so it shows in admin revenue/payments.
+
+    Unlike /payments/collect and /payments/cash this is NOT gated by the payments
+    feature flag — it's the persistence hook for the in-app simulated pay flow. It
+    derives the amount from the request's final bill (actual_fee) and marks the
+    payment collected ('success') so analytics revenue reflects it."""
+    req = await db.fetchrow(
+        "SELECT phone, actual_fee, mechanic_id FROM service_requests WHERE id=$1",
+        request_id,
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    amount = int(req["actual_fee"] or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="No final bill on this request yet")
+    mechanic_id = req["mechanic_id"]
+    driver_phone = req["phone"]
+    mech = await db.fetchrow("SELECT phone FROM mechanics WHERE id=$1", mechanic_id) if mechanic_id else None
+    mechanic_phone = (mech["phone"] if mech else None) or ""
+    payout = amount - PLATFORM_COMMISSION
+    # Record HOW it was paid: cash, or the MoMo network inferred from the mechanic's
+    # number (so admin sees "MTN" / "Airtel" rather than a generic "momo").
+    provider = "cash" if method == "cash" else _momo_network(mechanic_phone)
+
+    existing = await db.fetchrow("SELECT id, collection_status FROM payments WHERE request_id=$1", request_id)
+    if existing and existing["collection_status"] in ("success", "successful", "cash"):
+        return {"detail": "Payment already recorded", "amount": amount}
+    if existing:
+        await db.execute(
+            """UPDATE payments SET quoted_amount=$1, commission=$2, mechanic_payout=$3,
+                   mechanic_id=$4, mechanic_phone=$5, driver_phone=$6,
+                   collection_status='success', disbursement_status='pending',
+                   quote_approved=TRUE, provider=$7
+               WHERE id=$8""",
+            amount, PLATFORM_COMMISSION, payout, mechanic_id, mechanic_phone, driver_phone, provider, existing["id"],
+        )
+    else:
+        await db.execute(
+            """INSERT INTO payments
+               (request_id, mechanic_id, mechanic_phone, driver_phone, quoted_amount,
+                commission, mechanic_payout, collection_status, disbursement_status,
+                quote_approved, provider)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'success','pending',TRUE,$8)""",
+            request_id, mechanic_id, mechanic_phone, driver_phone, amount,
+            PLATFORM_COMMISSION, payout, provider,
+        )
+    logger.info(f"🧾 Recorded simulated payment for request {request_id}: {amount} UGX ({provider})")
+    return {"detail": "Payment recorded", "amount": amount, "method": provider}
 
 
 @app.get("/payments/status/{request_id}")
