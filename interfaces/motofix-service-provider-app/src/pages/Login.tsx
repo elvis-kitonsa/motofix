@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, IdCard, Lock, Eye, EyeOff, ShieldCheck,
@@ -14,7 +14,9 @@ const AMBER = '#F59E0B'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
+  // Back-button landed here while already signed in → go to the dashboard, not re-login.
+  useEffect(() => { if (isAuthenticated) navigate('/dashboard', { replace: true }) }, [isAuthenticated, navigate])
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 

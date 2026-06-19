@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import ReadableLocation from '@/components/ReadableLocation';
 import { DataTable } from '@/components/table/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -262,7 +263,7 @@ export default function Providers() {
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <MapPin size={14} className="text-muted-foreground" />
-          <span className="text-sm">{row.original.location || '—'}</span>
+          <ReadableLocation value={row.original.location} className="text-sm" />
         </div>
       ),
     },

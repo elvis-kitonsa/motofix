@@ -10,7 +10,6 @@ import InactivityGuard from "@/components/InactivityGuard";
 import { RequestProvider } from "@/contexts/RequestContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
-import { QuoteModal } from "@/components/QuoteModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useFcmToken } from "@/hooks/useFcmToken";
 import { useReminderScheduler } from "@/hooks/useReminderScheduler";
@@ -62,7 +61,7 @@ function AppContent() {
   return (
     <>
       <NetworkBanner />
-      <QuoteModal />
+      {/* QuoteModal retired — replaced by the in-job FinalPaymentFlow (see RequestDetail). */}
       <InactivityGuard />
       <Routes>
         <Route path="/" element={<Splash />} />

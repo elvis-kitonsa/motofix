@@ -6,7 +6,7 @@ import { markActivity, startActivity, wasInactivityLogout, clearInactivity } fro
 const AMBER = '#F59E0B'
 
 /**
- * Tracks user activity (to drive the 10-minute inactivity timeout) and, if the last
+ * Tracks user activity (to drive the 15-minute inactivity timeout) and, if the last
  * page load detected an expired session, shows a blocking "signed out for inactivity"
  * notice. Tapping "Go ahead" sends the user through the splash flow back to login.
  */
@@ -39,7 +39,7 @@ export default function InactivityGuard() {
         </div>
         <h2 style={{ color: 'var(--text-hi, #fff)', fontWeight: 900, fontSize: 19, marginBottom: 8 }}>Signed out for inactivity</h2>
         <p style={{ color: 'var(--text-md, rgba(255,255,255,0.65))', fontSize: 13.5, lineHeight: 1.6, marginBottom: 22 }}>
-          You were away for more than 10 minutes, so we signed you out to keep your account secure. Please log back in to continue.
+          You were away for more than 15 minutes, so we signed you out to keep your account secure. Please log back in to continue.
         </p>
         <button onClick={goAhead}
           style={{ width: '100%', height: 50, borderRadius: 14, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${AMBER}, #D97706)`, color: '#000', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>

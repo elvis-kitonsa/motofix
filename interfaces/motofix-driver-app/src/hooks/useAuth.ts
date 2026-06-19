@@ -209,8 +209,9 @@ export function useAuth() {
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
       console.log('✅ User saved to localStorage');
 
+      sessionStorage.removeItem('motofix_driver_greeting');  // fresh home-screen headline each login
       clearInactivity();  // drop any stale inactivity flag
-      startActivity();    // begin the 10-minute idle clock for this session
+      startActivity();    // begin the 15-minute idle clock for this session
 
       setUser(userData);
       setIsAuthenticated(true);

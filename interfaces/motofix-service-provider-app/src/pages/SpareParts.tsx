@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { ElementType } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLoadScript } from '@react-google-maps/api'
@@ -111,10 +111,6 @@ const CAR_MAKES: { make: string; models: string[] }[] = [
   { make: 'Ford',        models: ['Ranger', 'Everest', 'Focus'] },
   { make: 'Other',       models: [] },
 ]
-
-/* Real 3D car (three.js) — lazy-loaded so three.js stays OUT of the eagerly-imported
-   app bundle and only downloads when a part is opened. */
-const Car3D = lazy(() => import('@/components/Car3D'))
 
 type Step = 'shop' | 'configure' | 'searching' | 'suppliers'
 type Cfg = Record<string, string>
@@ -268,7 +264,6 @@ export default function SpareParts() {
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'var(--bg)', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' }}>
       <style>{`
         @keyframes sp-spin { to { transform: rotate(360deg); } }
-        @keyframes sp-rotate { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
         @keyframes sp-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes sp-ring { 0% { transform: scale(0.8); opacity: 0.6; } 100% { transform: scale(2); opacity: 0; } }
         .sp-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,0.14) !important; }
@@ -351,16 +346,6 @@ export default function SpareParts() {
                 <p style={{ color: textHi, fontWeight: 900, fontSize: 17 }}>{item.name}</p>
                 <p style={{ color: col, fontSize: 12.5, fontWeight: 800 }}>{fmtUGX(item.min)} – {fmtUGX(item.max)} <span style={{ color: textLo, fontWeight: 600 }}>· before quote</span></p>
               </div>
-            </div>
-
-            {/* Animated car skeleton */}
-            <div style={{ borderRadius: 18, border, background: surface, padding: '8px 8px 4px', marginBottom: 16 }}>
-              <Suspense fallback={<div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 size={22} style={{ color: col, animation: 'sp-spin 0.9s linear infinite' }} /></div>}>
-                <Car3D zone={item.zone} color={col} />
-              </Suspense>
-              <p style={{ textAlign: 'center', color: textLo, fontSize: 11, paddingBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Sparkles size={12} style={{ color: col }} /> Rotating 3D view — the glowing part is what you're buying
-              </p>
             </div>
 
             {/* Spec questions */}

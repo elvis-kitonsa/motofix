@@ -113,6 +113,7 @@ export interface DashboardStats {
   verifiedMechanics: number;
   revenueCollected: number;
   paidToMechanics: number;
+  commissionEarned: number;
   profit: number;
 }
 
@@ -134,6 +135,7 @@ export const fetchDashboardStats = async () => {
       verifiedMechanics: raw.verified_mechanics ?? raw.verifiedMechanics ?? 0,
       revenueCollected: raw.revenue_collected_ugx ?? raw.revenueCollectedUgx ?? 0,
       paidToMechanics: raw.paid_to_mechanics_ugx ?? raw.paidToMechanicsUgx ?? 0,
+      commissionEarned: raw.commission_earned_ugx ?? raw.commissionEarnedUgx ?? 0,
       profit:
         raw.profit_ugx ?? raw.profitUgx ?? ((raw.revenue_collected_ugx || raw.revenueCollectedUgx || 0) - (raw.paid_to_mechanics_ugx || raw.paidToMechanicsUgx || 0)),
     } as DashboardStats;
@@ -167,6 +169,7 @@ export const fetchDashboardStats = async () => {
       verifiedMechanics,
       revenueCollected,
       paidToMechanics,
+      commissionEarned: 0,
       profit,
     } as DashboardStats;
   } catch (err) {
@@ -180,6 +183,7 @@ export const fetchDashboardStats = async () => {
       verifiedMechanics: 0,
       revenueCollected: 0,
       paidToMechanics: 0,
+      commissionEarned: 0,
       profit: 0,
     } as DashboardStats;
   }
@@ -604,7 +608,9 @@ export interface Payment {
   quotedAmount: number;
   commission: number;
   mechanicPayout: number;
-  collectionStatus: 'pending' | 'initiated' | 'success' | 'failed';
+  method: string;            // how they paid: 'mtn' | 'airtel' | 'cash' | 'momo'
+  task: string;              // the service/task the payment was for
+  collectionStatus: 'pending' | 'initiated' | 'success' | 'failed' | 'successful' | 'cash';
   disbursementStatus: 'pending' | 'initiated' | 'success' | 'failed';
 }
 
@@ -646,6 +652,8 @@ export const fetchPayments = async (params: PaymentsParams) => {
     quotedAmount: Number(p.quoted_amount || 0),
     commission: Number(p.commission || 0),
     mechanicPayout: Number(p.mechanic_payout || 0),
+    method: p.provider || '—',
+    task: p.service_type || '—',
     collectionStatus: p.collection_status || 'pending',
     disbursementStatus: p.disbursement_status || 'pending',
   }));
@@ -1067,8 +1075,10 @@ export interface AdminNotification {
 
 export const fetchAdminNotifications = async (limit = 30): Promise<AdminNotification[]> => {
   try {
-    const resp = await mechanicsClient.get('/admin/notifications', { params: { limit } });
-    return Array.isArray(resp.data) ? resp.data : [];
+    // /admin/notifications is served by the analytics service (same base as the other
+    // /admin/* calls) — must go through fetchWithAuth, NOT mechanicsClient.
+    const data = await fetchWithAuth<AdminNotification[]>(`/admin/notifications?limit=${limit}`);
+    return Array.isArray(data) ? data : [];
   } catch {
     return [];
   }

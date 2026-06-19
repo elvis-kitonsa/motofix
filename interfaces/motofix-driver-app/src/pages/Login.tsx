@@ -24,6 +24,8 @@ export default function Login() {
   const cooldownRef               = useRef<ReturnType<typeof setInterval> | null>(null);
   const navigate    = useNavigate();
   const location    = useLocation();
+  // Back-button landed here while already signed in → go Home, don't force re-login.
+  useEffect(() => { if (localStorage.getItem('motofix_token')) navigate('/requests', { replace: true }); }, [navigate]);
 
   // When arriving from Onboarding after signup, the registered phone is locked
   const lockedPhone: string | null = (location.state as any)?.lockedPhone ?? null;

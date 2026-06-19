@@ -27,9 +27,15 @@ export default function Splash() {
   const badgeBg = isDark ? '#C47F09' : 'transparent';
 
   useEffect(() => {
+    // Already signed in (and not expired by the 15-min inactivity guard that runs in
+    // main.tsx before render) → go straight Home and skip the splash, so the browser
+    // Back button never strands a logged-in user on the splash/login flow.
+    if (localStorage.getItem('motofix_token')) {
+      navigate('/requests', { replace: true });
+      return;
+    }
     if (splashDisabled()) {
-      const dest = localStorage.getItem('motofix_token') ? '/requests' : '/driver-entry';
-      navigate(dest, { replace: true });
+      navigate('/driver-entry', { replace: true });
       return;
     }
     const schedule: [number, () => void][] = [
