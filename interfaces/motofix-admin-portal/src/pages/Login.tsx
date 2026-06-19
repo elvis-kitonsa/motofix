@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { adminLogin } from "@/lib/api";
+import { adminLogin, isAuthenticated } from "@/lib/api";
 import { toast } from "sonner";
 import { Lock, Mail, Loader2, Eye, EyeOff, ShieldCheck, Activity, Users, Wrench } from "lucide-react";
 
@@ -46,6 +46,9 @@ export default function Login() {
     const ids = SCHEDULE.map(([ms, p]) => setTimeout(() => setPhase(p), ms));
     return () => ids.forEach(clearTimeout);
   }, []);
+
+  // Back-button landed here while already signed in → go to the dashboard, not re-login.
+  useEffect(() => { if (isAuthenticated()) navigate('/dashboard', { replace: true }); }, [navigate]);
 
   // Both panels slide simultaneously on the same phase
   const revealed = after(phase, "reveal");
