@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Navigation2, Phone, MessageCircle, MapPin, Maximize2, Minimize2, Stethoscope, ChevronLeft, Wrench, Smartphone, Clock, User, Star, Ban, Check, Sparkles } from 'lucide-react'
+import { Navigation2, Phone, MessageCircle, MapPin, Maximize2, Minimize2, Stethoscope, ChevronLeft, Wrench, Smartphone, Clock, User, Star, Ban, Check, Sparkles, Wallet, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import CancelJobModal from '@/components/CancelJobModal'
 import { useLoadScript, GoogleMap, Marker, Polyline } from '@react-google-maps/api'
@@ -216,6 +216,8 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   const [driverRating, setDriverRating] = useState(0)
   const [driverComment, setDriverComment] = useState('')
   const [isSubmittingRating, setIsSubmittingRating] = useState(false)
+  // Payment-received confirmation — opens when the driver completes payment.
+  const [paymentReq, setPaymentReq] = useState<{ method: string; amount: number } | null>(null)
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
   const [ratingDismissed, setRatingDismissed] = useState(false)
 
@@ -358,6 +360,14 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
       reverseGeocode(msg.lat, msg.lng).then(setLocationText)
     }
   }, [lastMessage])
+
+  // Driver completed payment → ask the mechanic to confirm they received it.
+  useEffect(() => {
+    const msg = lastMessage as { type?: string; service_request_id?: string | number; method?: string; amount?: number } | null
+    if (msg?.type === 'payment_completed' && activeRequest && String(msg.service_request_id) === String(activeRequest.id)) {
+      setPaymentReq({ method: msg.method || 'momo', amount: Number(msg.amount) || 0 })
+    }
+  }, [lastMessage, activeRequest?.id])
 
   const updateStatus = useCallback(async (status: string, extra?: Record<string, unknown>) => {
     if (!activeRequest) return
@@ -880,6 +890,12 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
           const arrivalText = enRoute
             ? arrivalWindow((activeRequest as any).en_route_at, (activeRequest as any).eta_minutes)
             : null
+          const amberGrad: React.CSSProperties = {
+            background: 'linear-gradient(135deg, #FBBF24, #F59E0B)',
+            WebkitBackgroundClip: 'text', backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent', color: '#F59E0B',
+          }
+          const etaNum = etaText && etaText !== 'Arriving' ? etaText.replace(/\D+$/, '').trim() : null
 
           const mapOpts = {
             disableDefaultUI: true,
@@ -899,10 +915,20 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             ? driverPos
             : (enRoute ? sim.mechPos : myPos)
           const simRemaining = enRoute ? sim.remaining : null
+          // TEMP DIAGNOSTIC — remove once the driver-pin issue is pinned down.
+          console.log('[ActiveJob map]', {
+            status: activeRequest?.status,
+            driverMarkerPos, mechMarkerPos,
+            reqDriver, driverPos,
+            location_lat: (activeRequest as any)?.location_lat,
+            location_lng: (activeRequest as any)?.location_lng,
+            location_str: (activeRequest as any)?.location,
+            simReady: sim.ready, simRemainingPts: sim.remaining?.length ?? 0,
+          })
           const renderMapContent = (_ref: React.MutableRefObject<google.maps.Map | null>, onLoad: (m: google.maps.Map) => void) => (
             <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={KAMPALA_CENTER} zoom={13} options={mapOpts} onLoad={onLoad}>
-              {driverMarkerPos && <Marker position={driverMarkerPos} icon={driverIcon} title="Driver" />}
-              {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" />}
+              {driverMarkerPos && <Marker position={driverMarkerPos} icon={driverIcon} title="Driver" zIndex={1000} />}
+              {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" zIndex={1001} />}
               {simRemaining && simRemaining.length >= 2 && (
                 // key tracks the journey so the line is re-drawn as the mechanic
                 // advances — otherwise its path freezes at the full route and the
@@ -929,18 +955,7 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
                   </span>
                 )}
               </div>
-              <div style={{ position: 'absolute', top: full ? 18 : 10, right: full ? 54 : 46, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, pointerEvents: 'none', zIndex: 10 }}>
-                {(arrivalText || etaText) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#F59E0B', color: '#000', fontSize: 12, fontWeight: 800, borderRadius: 10, padding: '5px 11px', boxShadow: '0 2px 12px rgba(245,158,11,0.45)' }}>
-                    <span style={{ fontSize: 11 }}>🕐</span> {arrivalText ?? etaText}
-                  </div>
-                )}
-                {distText && (
-                  <div style={{ background: 'rgba(10,14,30,0.82)', color: '#cbd5e1', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '4px 9px', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(4px)' }}>
-                    {distText}
-                  </div>
-                )}
-              </div>
+              {/* ETA/distance moved OFF the map → shown in the loader strip above it. */}
               <button
                 onClick={() => setMapExpanded(e => !e)}
                 style={{ position: 'absolute', top: full ? 18 : 10, right: 10, zIndex: 20, width: 34, height: 34, borderRadius: 10, background: 'rgba(10,14,30,0.82)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -951,6 +966,32 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
 
           return (
             <>
+              {/* Arrival loader strip — ABOVE the map (mirrors the driver app); the
+                  time range sits just under the big ETA, never on the map itself. */}
+              {enRoute && (
+                <div style={{ padding: '2px 2px 12px' }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', color: C.textFaint, marginBottom: 3 }}>Arriving in</p>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: arrivalText ? 4 : 10 }}>
+                    {etaNum ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+                        <span style={{ ...amberGrad, fontSize: 44, fontWeight: 900, lineHeight: 0.95, letterSpacing: '-0.03em' }}>{etaNum}</span>
+                        <span style={{ ...amberGrad, fontSize: 18, fontWeight: 800 }}>min</span>
+                      </span>
+                    ) : (
+                      <span style={{ ...amberGrad, fontSize: 34, fontWeight: 900, lineHeight: 1 }}>{etaText ?? 'Estimating…'}</span>
+                    )}
+                    {distText && <span style={{ fontSize: 13, fontWeight: 700, color: C.textMuted }}>· {distText} away</span>}
+                  </div>
+                  {arrivalText && (
+                    <p style={{ fontSize: 12.5, color: C.textMuted, marginBottom: 10 }}>
+                      Between <span style={{ color: '#F59E0B', fontWeight: 800 }}>{arrivalText}</span>
+                    </p>
+                  )}
+                  <div style={{ height: 8, borderRadius: 999, background: C.surface3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round(Math.max(0, Math.min(1, sim.progress ?? 0)) * 100)}%`, background: 'linear-gradient(90deg, #F59E0B, #FBBF24)', borderRadius: 999, transition: 'width 1.2s linear' }} />
+                  </div>
+                </div>
+              )}
               <div className="motofix-map" style={{ ...mapCardStyle, display: mapExpanded ? 'none' : 'block' }}>
                 {renderMapContent(mapRef, onMapLoad)}
                 {mapOverlays(false)}
@@ -1383,6 +1424,38 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment-received confirmation — persistent, blurs the page until answered. */}
+      {paymentReq && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 380, borderRadius: 24, background: C.surface1, border: `1.5px solid ${C.amber}55`, boxShadow: '0 24px 80px rgba(0,0,0,0.7)', padding: '24px 20px', textAlign: 'center', animation: 'irm-pop-in 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', margin: '0 auto 14px', background: `${C.amber}1e`, border: `2px solid ${C.amber}55`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Wallet style={{ width: 26, height: 26, color: C.amber }} />
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 900, color: C.textHi, marginBottom: 6 }}>Have you received the payment?</h2>
+            <p style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.55, marginBottom: 4 }}>
+              The driver completed a <strong style={{ color: C.textHi }}>{paymentReq.method === 'cash' ? 'cash' : 'Mobile Money'}</strong> payment.
+            </p>
+            <p style={{ fontSize: 26, fontWeight: 900, color: C.amber, letterSpacing: '-0.02em', marginBottom: 18 }}>UGX {paymentReq.amount.toLocaleString()}</p>
+            <button
+              onClick={() => {
+                // Persist the payment so admin revenue/payments reflect it, then ack + complete.
+                jobService.recordPayment(activeRequest.id, paymentReq.method === 'cash' ? 'cash' : 'momo').catch(() => {})
+                sendMessage({ type: 'payment_ack', service_request_id: activeRequest.id, received: true })
+                setPaymentReq(null)
+                updateStatus('completed')
+              }}
+              style={{ width: '100%', height: 52, borderRadius: 15, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #22C55E, #16A34A)', color: '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginBottom: 10 }}>
+              <CheckCircle2 style={{ width: 18, height: 18 }} /> Yes, I’ve received it
+            </button>
+            <button
+              onClick={() => { sendMessage({ type: 'payment_ack', service_request_id: activeRequest.id, received: false }); setPaymentReq(null) }}
+              style={{ width: '100%', height: 48, borderRadius: 14, cursor: 'pointer', background: C.surface3, border: `1px solid ${C.border}`, color: C.textMuted, fontSize: 14, fontWeight: 700 }}>
+              No, not yet
+            </button>
           </div>
         </div>
       )}

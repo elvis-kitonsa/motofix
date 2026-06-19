@@ -228,6 +228,10 @@ export const jobService = {
   // This mechanic's consecutive-cancellation strikes + suspension state.
   getStrikes: () =>
     mechanicsApi.get<{ strikes: number; suspended: boolean; limit: number }>('/mechanics/me/strikes'),
+
+  // Persist a completed (simulated) job payment so it appears in admin revenue/payments.
+  recordPayment: (id: string | number, method: 'cash' | 'momo') =>
+    requestsApi.post(`/payments/record/${id}`, null, { params: { method } }),
 }
 
 // ── Reviews (port 8001) ───────────────────────────────────────────────────────

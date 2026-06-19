@@ -38,36 +38,6 @@ function getLocalName(fullName: string): string {
   return chosen.charAt(0).toUpperCase() + chosen.slice(1).toLowerCase()
 }
 
-/* ── Time-based greeting pools (EAT = UTC+3) ────────────────── */
-const GREETINGS: Record<string, string[]> = {
-  latenight:    ['Wanna catch a late night hustle,', 'Night shifts pay the most,',      'Beat the competition tonight,',  'Stranded drivers need you now,'   ],
-  earlymorning: ['Pick up an early request,',        'Rise and claim those jobs,',       'Early birds earn the most,',     'Beat the morning rush,'           ],
-  morning:      ['Morning jobs are rolling in,',     'Make the most of your morning,',   "Catch the day's best jobs,",     'Cars need fixing this morning,'   ],
-  afternoon:    ['Afternoon hustle mode on,',        'Midday jobs are waiting,',         'Keep the grind going,',          'Peak hours are starting,'         ],
-  evening:      ['Evening rush is starting,',        'Best hours to be online,',         'Catch the evening wave,',        "Breakdowns don't stop at night,"  ],
-}
-
-function getPool(h: number) {
-  if (h >= 22 || h < 5)  return GREETINGS.latenight
-  if (h >= 5  && h < 9)  return GREETINGS.earlymorning
-  if (h >= 9  && h < 12) return GREETINGS.morning
-  if (h >= 12 && h < 17) return GREETINGS.afternoon
-  return GREETINGS.evening
-}
-
-function pickGreeting(): string {
-  const h = parseInt(
-    new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala', hour: 'numeric', hour12: false }), 10,
-  )
-  const pool = getPool(h)
-  const key  = 'sp_greeting_idx'
-  const stored = sessionStorage.getItem(key)
-  if (stored !== null) return pool[parseInt(stored) % pool.length]
-  const idx = Math.floor(Math.random() * pool.length)
-  sessionStorage.setItem(key, String(idx))
-  return pool[idx]
-}
-
 /* ── Provider tips ───────────────────────────────────────────── */
 const TIPS = [
   {
@@ -209,9 +179,9 @@ export default function Home({
   const { theme } = useTheme()
   const isDark = theme === 'dark'
   const cardBorder = isDark ? '1.5px solid rgba(255,255,255,0.20)' : '1.5px solid rgba(0,0,0,0.65)'
-  const greeting = useRotatingGreeting()
   const lastName  = profile?.full_name ? getLocalName(profile.full_name) : null
   const isTowing  = profile?.provider_type === 'towing_provider'
+  const greeting = useRotatingGreeting(isTowing ? 'towing' : 'mechanic')
   const [hoveredAction, setHoveredAction] = useState<string | null>(null)
   const [selectedTip, setSelectedTip]     = useState<typeof TIPS[0] | null>(null)
   const [showReadyModal,   setShowReadyModal]   = useState(false)
