@@ -133,10 +133,10 @@ export default function Dashboard() {
             isLoading={statsLoading}
           />
           <ChipCard
-            title="Net Profit"
-            value={formatUGX(s.profit)}
+            title="Commission Collected"
+            value={formatUGX(s.commissionEarned)}
             icon={<Wallet size={18} />}
-            sub="Platform margin"
+            sub="UGX 10,000 / job — since launch"
             iconColor={C.purple}
             onMore={() => setModal('netProfit')}
             onClick={() => navigate('/payments')}
@@ -210,10 +210,10 @@ export default function Dashboard() {
                 isLoading={statsLoading}
               />
               <FinanceRow
-                label="Net Profit"
-                value={formatUGX(s.profit)}
+                label="Commission (10k/job)"
+                value={formatUGX(s.commissionEarned)}
                 color={C.green}
-                pct={s.revenueCollected > 0 ? Math.round((s.profit / s.revenueCollected) * 100) : 0}
+                pct={s.revenueCollected > 0 ? Math.round((s.commissionEarned / s.revenueCollected) * 100) : 0}
                 isLoading={statsLoading}
                 isLast
               />

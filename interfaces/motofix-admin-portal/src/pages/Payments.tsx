@@ -84,6 +84,13 @@ const columns: ColumnDef<Payment>[] = [
     ),
   },
   {
+    accessorKey: 'task',
+    header: 'Task',
+    cell: ({ row }) => (
+      <span className="text-sm whitespace-nowrap">{row.original.task || '—'}</span>
+    ),
+  },
+  {
     accessorKey: 'quotedAmount',
     header: 'Quoted',
     cell: ({ row }) => (
@@ -98,6 +105,21 @@ const columns: ColumnDef<Payment>[] = [
     cell: ({ row }) => (
       <span className="font-mono text-sm text-success">{formatUGX(row.original.commission)}</span>
     ),
+  },
+  {
+    accessorKey: 'method',
+    header: 'How paid',
+    cell: ({ row }) => {
+      const m = (row.original.method || '').toLowerCase();
+      const label = m === 'mtn' ? 'MTN MoMo' : m === 'airtel' ? 'Airtel Money' : m === 'cash' ? 'Cash' : m === 'momo' ? 'Mobile Money' : '—';
+      if (label === '—') return <span className="text-sm text-muted-foreground">—</span>;
+      const color = m === 'mtn' ? '#F59E0B' : m === 'airtel' ? '#EF4444' : m === 'cash' ? '#22C55E' : '#A78BFA';
+      return (
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}>
+          {label}
+        </span>
+      );
+    },
   },
   {
     accessorKey: 'mechanicPayout',

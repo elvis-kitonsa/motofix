@@ -400,9 +400,9 @@ async def list_payments(
 
     query = f"""
         SELECT p.id, p.request_id, p.quoted_amount, p.commission, p.mechanic_payout,
-               p.collection_status, p.disbursement_status,
+               p.collection_status, p.disbursement_status, p.provider,
                p.collection_reference, p.disbursement_reference, p.created_at,
-               sr.customer_name, sr.phone AS driver_phone,
+               sr.customer_name, sr.phone AS driver_phone, sr.service_type,
                {mech_select}, p.mechanic_id
         {base_from}
         {where_sql}
@@ -542,8 +542,11 @@ async def dashboard_stats(
         stats["total_mechanics"] = 0
         stats["verified_mechanics"] = 0
 
+    # "Collected" = any payment that actually changed hands. Payments are labelled
+    # inconsistently across the codebase (MoMo→'success'/'successful', cash→'cash'),
+    # so count them all together for every money total.
     collected = await db.fetchval(
-        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status='success'"
+        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
     )
     paid_out = await db.fetchval(
         "SELECT COALESCE(SUM(mechanic_payout), 0) FROM payments WHERE disbursement_status='success'"
@@ -553,6 +556,12 @@ async def dashboard_stats(
     stats["paid_to_mechanics_ugx"] = float(paid_out or 0)
     stats["profit_ugx"] = float((collected or 0) - (paid_out or 0))
     stats["total_transactions"] = await db.fetchval("SELECT COUNT(*) FROM payments") or 0
+    stats["commission_earned_ugx"] = float(await db.fetchval(
+        "SELECT COALESCE(SUM(commission), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
+    ) or 0)
+    stats["pending_collections_ugx"] = float(await db.fetchval(
+        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('pending','initiated')"
+    ) or 0)
 
     stats["as_of"] = datetime.utcnow().isoformat() + "Z"
     stats["motofix_is_unstoppable"] = True
@@ -572,7 +581,7 @@ async def revenue_chart(
         SELECT to_char(created_at::date, 'YYYY-MM-DD') AS date,
                COALESCE(SUM(quoted_amount), 0) AS amount
         FROM payments
-        WHERE collection_status = 'success'
+        WHERE collection_status IN ('success','successful','cash')
         GROUP BY date
         ORDER BY date DESC
         LIMIT $1
@@ -819,7 +828,7 @@ async def compliance_report(
     ) or 0
     total_payments = await db.fetchval("SELECT COUNT(*) FROM payments") or 0
     collected_ugx = await db.fetchval(
-        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status = 'successful'"
+        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
     ) or 0
     disbursed_ugx = await db.fetchval(
         "SELECT COALESCE(SUM(mechanic_payout), 0) FROM payments WHERE disbursement_status = 'pending'"
@@ -1069,7 +1078,7 @@ async def admin_notifications(
                       sr.customer_name, sr.service_type
                FROM payments p
                LEFT JOIN service_requests sr ON p.request_id = sr.id
-               WHERE p.collection_status = 'success'
+               WHERE p.collection_status IN ('success','successful','cash')
                ORDER BY p.created_at DESC
                LIMIT 10"""
         )

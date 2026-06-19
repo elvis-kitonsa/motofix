@@ -22,12 +22,14 @@ interface Notification {
   read: boolean;
 }
 
-const TYPE_META: Record<NotifType, { icon: React.ElementType; color: string; bg: string }> = {
-  request:  { icon: Wrench,       color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
-  payment:  { icon: CreditCard,   color: '#34d399', bg: 'rgba(52,211,153,0.12)'  },
-  provider: { icon: BadgeCheck,   color: '#FFB300', bg: 'rgba(255,179,0,0.12)'  },
-  driver:   { icon: Car,          color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
-  system:   { icon: AlertCircle,  color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+// Colours mirror the driver app's notification cards: green for money/success,
+// amber for jobs, blue for driver activity, red for system alerts.
+const TYPE_META: Record<NotifType, { icon: React.ElementType; color: string }> = {
+  request:  { icon: Wrench,      color: '#F59E0B' },
+  payment:  { icon: CreditCard,  color: '#22C55E' },
+  provider: { icon: BadgeCheck,  color: '#FFB300' },
+  driver:   { icon: Car,         color: '#60A5FA' },
+  system:   { icon: AlertCircle, color: '#F87171' },
 };
 
 const READ_KEY = 'motofix_admin_notif_read';
@@ -76,22 +78,25 @@ function NotifRow({ n, onOpen, onMarkUnread }: {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
+        position: 'relative',
         display: 'flex', alignItems: 'flex-start', gap: 12,
-        padding: '12px 16px',
-        background: hov
-          ? 'var(--adm-row-hover)'
-          : n.read ? 'transparent' : 'var(--adm-amber-dim)',
-        borderBottom: '1px solid var(--adm-divider)',
+        padding: '12px 14px',
+        // Bordered card matching the driver app: signature card border + soft shadow.
+        background: 'var(--adm-surface)',
+        border: '1.5px solid var(--adm-card-border)',
+        borderRadius: 14,
+        boxShadow: hov ? '0 8px 24px rgba(0,0,0,0.20)' : '0 4px 16px rgba(0,0,0,0.14)',
+        opacity: n.read ? 0.8 : 1,
         cursor: 'pointer',
-        transition: 'background 0.12s',
+        transition: 'box-shadow 0.15s, opacity 0.15s',
       }}
     >
       <div style={{
-        width: 34, height: 34, borderRadius: 9, flexShrink: 0,
-        background: meta.bg,
+        width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+        background: `${meta.color}1f`, border: `1px solid ${meta.color}55`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Icon size={15} color={meta.color} />
+        <Icon size={16} color={meta.color} />
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -126,8 +131,9 @@ function NotifRow({ n, onOpen, onMarkUnread }: {
 
       {!n.read && (
         <span style={{
-          width: 7, height: 7, borderRadius: '50%',
-          background: C.amber, flexShrink: 0, marginTop: 5,
+          position: 'absolute', top: 12, right: 12,
+          width: 8, height: 8, borderRadius: '50%',
+          background: meta.color, flexShrink: 0,
         }} />
       )}
     </div>
@@ -187,8 +193,8 @@ function NotifDetail({ n, onClose, onMarkUnread }: {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 38, height: 38, borderRadius: 10,
-              background: meta.bg,
+              width: 38, height: 38, borderRadius: '50%',
+              background: `${meta.color}1f`, border: `1px solid ${meta.color}55`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <Icon size={17} color={meta.color} />
@@ -225,7 +231,7 @@ function NotifDetail({ n, onClose, onMarkUnread }: {
           <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{
               fontSize: 11, fontWeight: 700,
-              color: meta.color, background: meta.bg,
+              color: meta.color, background: `${meta.color}1f`,
               border: `1px solid ${meta.color}33`,
               padding: '3px 10px', borderRadius: 20,
               textTransform: 'capitalize',
@@ -433,8 +439,8 @@ export function NotificationCenter() {
               ))}
             </div>
 
-            {/* List */}
-            <div style={{ maxHeight: 360, overflowY: 'auto', scrollbarWidth: 'none' }}>
+            {/* List — bordered cards, spaced (matches the driver app) */}
+            <div style={{ maxHeight: 380, overflowY: 'auto', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
               {displayed.length === 0 ? (
                 <div style={{
                   padding: '32px 16px', textAlign: 'center',
