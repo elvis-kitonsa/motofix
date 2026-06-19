@@ -33,8 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = (newToken: string, newUser: User) => {
     lsSet('motofix_sp_token', newToken)
     lsSet('motofix_sp_user', JSON.stringify(newUser))
+    sessionStorage.removeItem('motofix_sp_greeting')  // fresh home-screen headline each login
     clearInactivity()  // clear any stale inactivity flag
-    startActivity()    // begin the 10-minute idle clock for this session
+    startActivity()    // begin the 15-minute idle clock for this session
     setToken(newToken)
     setUser(newUser)
   }

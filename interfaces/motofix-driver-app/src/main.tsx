@@ -8,7 +8,7 @@ const theme = localStorage.getItem("motofix_theme2") || "light";
 document.documentElement.classList.remove("dark", "light");
 document.documentElement.classList.add(theme);
 
-// Sign out a session idle past the 10-minute window, before anything reads the token.
+// Sign out a session idle past the 15-minute window, before anything reads the token.
 expireIfInactive();
 
 createRoot(document.getElementById("root")!).render(<App />);

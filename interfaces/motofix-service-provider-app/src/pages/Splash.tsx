@@ -20,6 +20,15 @@ export default function Splash() {
   const badgeBg = isDark ? '#C47F09' : 'transparent'
 
   useEffect(() => {
+    // Already signed in (and not expired by the 15-min inactivity guard) → skip the
+    // splash and go straight to the dashboard, so the Back button never strands a
+    // logged-in provider on the login flow.
+    try {
+      if (localStorage.getItem('motofix_sp_token')) {
+        navigate('/dashboard', { replace: true })
+        return
+      }
+    } catch { /* storage blocked */ }
     const schedule: [number, () => void][] = [
       [100,  () => setPhase('ring')],
       [900,  () => setPhase('scan')],

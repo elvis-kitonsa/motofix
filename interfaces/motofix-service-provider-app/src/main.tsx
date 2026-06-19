@@ -13,7 +13,7 @@ try {
   document.documentElement.classList.add(theme)
 } catch { /* storage blocked — html already defaults to class="light" */ }
 
-// Sign out a session idle past the 10-minute window, before anything reads the token.
+// Sign out a session idle past the 15-minute window, before anything reads the token.
 expireIfInactive()
 
 createRoot(document.getElementById('root')!).render(

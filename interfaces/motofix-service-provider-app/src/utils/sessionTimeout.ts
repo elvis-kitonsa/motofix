@@ -1,11 +1,11 @@
-// 10-minute inactivity auto-logout.
+// 15-minute inactivity auto-logout.
 //
 // We record the last user-interaction time in localStorage. On every page load
 // (`expireIfInactive`, called from main.tsx before React renders) we compare it to
 // now — if the user has been away longer than the window, we clear the session and
 // raise a flag so the app can show the "signed out for inactivity" notice.
 
-const TIMEOUT_MS   = 10 * 60 * 1000 // 10 minutes
+const TIMEOUT_MS   = 15 * 60 * 1000 // 15 minutes
 const TOKEN_KEY    = 'motofix_sp_token'
 const USER_KEY     = 'motofix_sp_user'
 const ACTIVITY_KEY = 'motofix_sp_last_activity'
