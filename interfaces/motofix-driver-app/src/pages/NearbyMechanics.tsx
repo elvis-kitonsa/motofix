@@ -5,7 +5,7 @@ import {
   ArrowLeft, Phone, Star, Navigation, X,
   Shield, Clock, Zap, MapPin, CheckCircle2,
   Wrench, Truck, ShoppingBag, Loader2, ChevronRight,
-  MessageCircle, Mail, Camera, FileText, ScanLine,
+  MessageCircle, Mail, Camera, FileText, ScanLine, Sparkles,
 } from 'lucide-react';
 import { matchingService, requestsService, MechanicCandidate } from '@/config/api';
 import { toast } from 'sonner';
@@ -500,7 +500,8 @@ function ProviderSheet({ mechanic, serviceType, requesting, onClose, onRequest, 
 }) {
   const meta    = PROVIDER_META[serviceType] ?? PROVIDER_META.mechanic;
   const Icon    = meta.icon;
-  const rating  = Math.min(5, Math.max(3.5, (mechanic.total_score ?? 0.8) * 5));
+  const _ts = mechanic.total_score ?? 0;
+  const rating  = Math.min(5, Math.max(3.5, _ts > 5 ? _ts / 20 : _ts * 5));  // total_score is 0–100 now (legacy mocks were 0–1)
   const reviews = [REVIEW_POOL[mechanic.mechanic_id % 8], REVIEW_POOL[(mechanic.mechanic_id + 3) % 8]];
   const waPhone = cleanPhone(mechanic.phone);
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mechanic.locationLabel)}`;
@@ -563,6 +564,41 @@ function ProviderSheet({ mechanic, serviceType, requesting, onClose, onRequest, 
             </div>
           </div>
         </div>
+
+        {/* ── Why MOTOFIX matched this mechanic (intelligent matching showcase) ── */}
+        {(mechanic.match_priority != null || mechanic.score_breakdown) && (() => {
+          const bd = mechanic.score_breakdown ?? {};
+          const priority = mechanic.match_priority ?? mechanic.total_score ?? 0;
+          const FEATURES: { key: string; label: string; color: string }[] = [
+            { key: 'spec_match',   label: 'Specialisation', color: '#A78BFA' },
+            { key: 'availability', label: 'Availability',   color: '#34D399' },
+            { key: 'proximity',    label: 'Proximity',      color: '#60A5FA' },
+            { key: 'rating',       label: 'Rating',         color: Y },
+          ];
+          const present = FEATURES.filter(f => bd[f.key] != null);
+          return (
+            <div style={{ margin: '14px 18px 0', borderRadius: 16, background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.28)', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', color: '#A78BFA' }}>
+                  <Sparkles style={{ width: 13, height: 13 }} /> MOTOFIX AI MATCH
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 900, color: '#A78BFA' }}>{priority.toFixed(1)}%</span>
+              </div>
+              {mechanic.rationale && (
+                <p style={{ fontSize: 12, color: 'var(--text-md)', lineHeight: 1.5, marginBottom: present.length ? 10 : 0 }}>{mechanic.rationale}</p>
+              )}
+              {present.map(f => (
+                <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ width: 86, flexShrink: 0, fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 600 }}>{f.label}</span>
+                  <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--surface-3)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, bd[f.key]))}%`, background: f.color, borderRadius: 999 }} />
+                  </div>
+                  <span style={{ width: 30, textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: 'var(--text-md)' }}>{Math.round(bd[f.key])}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Distance / ETA / Navigate chips */}
         <div style={{ display: 'flex', gap: 8, padding: '12px 18px 0' }}>
@@ -874,13 +910,18 @@ export default function NearbyMechanics() {
       list = enrich((res.data.candidates ?? []) as MechanicCandidate[], center);
     } catch {
       list = enrich(
-        ['Kampala Auto Works', 'Quick Fix Garage', 'Road Angels Towing', 'City Motors', 'Fast Lane Mechanics'].map((name, i) => ({
-          mechanic_id: i + 1, mechanic_name: name,
-          phone: `+25670${i}123456`,
-          distance_km: +(0.4 + i * 0.65).toFixed(1),
-          total_score: +(0.94 - i * 0.06).toFixed(2),
-          score_breakdown: { proximity: 0.9 - i * 0.1, availability: 0.85, rating: 0.8 },
-        })),
+        ['Kampala Auto Works', 'Quick Fix Garage', 'Road Angels Towing', 'City Motors', 'Fast Lane Mechanics'].map((name, i) => {
+          const score = +(95 - i * 7).toFixed(1);
+          return {
+            mechanic_id: i + 1, mechanic_name: name,
+            phone: `+25670${i}123456`,
+            distance_km: +(0.4 + i * 0.65).toFixed(1),
+            total_score: score,
+            match_priority: score,
+            rationale: i === 0 ? 'Exact specialist for this fault; strong rating, reliable & responsive.' : 'Relevant skills for this fault; reliable & responsive.',
+            score_breakdown: { spec_match: 100 - i * 12, availability: 90 - i * 5, proximity: Math.max(20, 95 - i * 14), rating: 88 - i * 6 },
+          };
+        }),
         center,
       );
     }
@@ -1198,7 +1239,8 @@ export default function NearbyMechanics() {
           {!listMinimized && (
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px', paddingBottom: 'max(env(safe-area-inset-bottom,0px),16px)', scrollbarWidth: 'none' }}>
               {mechanics.map((m, idx) => {
-                const rating  = Math.min(5, (m.total_score ?? 0.8) * 5);
+                const _mts = m.total_score ?? 0;
+                const rating  = Math.min(5, Math.max(3.5, _mts > 5 ? _mts / 20 : _mts * 5));
                 const visible = visibleIds.has(m.mechanic_id);
                 return (
                   <div
