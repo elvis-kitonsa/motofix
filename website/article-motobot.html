@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Under the Hood: Building the MOTOFIX Apps — MOTOFIX Uganda</title>
+<meta name="description" content="Three full applications, real-time maps, and a multimodal AI assistant — how the screens drivers and mechanics actually use were engineered.">
+<link rel="icon" type="image/png" href="assets/motofix-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="brand"><img src="assets/motofix-logo.png" alt="MOTOFIX" class="brand-logo"></a>
+    <nav class="nav-links">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#how">How it works</a>
+      <a href="index.html#team">Team</a>
+      <a href="index.html#research">Research</a>
+      <a href="index.html#blog" class="active">Blog</a>
+      <a href="https://www.linkedin.com/company/motofix-uganda/" target="_blank" rel="noopener" class="nav-cta">LinkedIn ↗</a>
+    </nav>
+  </div>
+</header>
+<article class="article">
+  <div class="article-head">
+    <a href="index.html#blog" class="back">← All articles</a>
+    <span class="tag">Engineering</span>
+    <h1>Under the Hood: Building the MOTOFIX Apps</h1>
+    <p class="byline">By <strong>Kitonsa Elvis</strong> &nbsp;·&nbsp; MOTOFIX Uganda</p>
+  </div>
+  <div class="article-body">
+    <p>A good app makes hard things feel effortless — and that ease is the hardest part to build. Behind MOTOFIX's few simple taps sit three complete applications, engineered from the ground up: the driver app, the mechanic and tow-provider app, and the admin control room. I led the frontend across all three — designing and building the interfaces, the real-time experience, and the AI features inside them.</p>
+    <h2>Three apps, one product</h2>
+    <p>Each app is a full React and TypeScript application, mobile-first and built for the phones Ugandans actually carry, with light and dark themes throughout. They are deliberately distinct — a stressed driver, a working mechanic and an admin need very different things — yet they share one design language, so MOTOFIX feels like a single, coherent product rather than three separate tools stitched together.</p>
+    <figure class="shot phone-shot">
+      <img src="assets/5893283652760702902.jpg" alt="The driver app — a calm, focused interface for a stressful moment." loading="lazy">
+      <figcaption>The driver app — a calm, focused interface for a stressful moment.</figcaption>
+    </figure>
+    <h2>Help you can watch arrive</h2>
+    <p>The live-tracking map is the part I am proudest of. The driver and the mechanic each see the same journey — the route between them, a pin that moves along the road, and an ETA that counts down — kept in step over a live WebSocket connection. The drawn route shrinks in real time as the mechanic advances, the connection survives drops and reconnects on its own, and the screen updates the instant anything changes rather than waiting on a refresh. Getting real-time UI to feel trustworthy on a patchy mobile network was a real engineering challenge, not a drag-and-drop.</p>
+    <figure class="shot phone-shot">
+      <img src="assets/5893283652760702901.jpg" alt="Live tracking — built to update the moment the mechanic moves." loading="lazy">
+      <figcaption>Live tracking — built to update the moment the mechanic moves.</figcaption>
+    </figure>
+    <h2>Making the AI genuinely usable</h2>
+    <p>MOTOBOT, the in-app assistant, is the feature people notice — but the model is the easy part. The engineering was in the experience around it: a multimodal chat where a driver can type, record a voice note, or snap a photo of the fault and get a clear answer back; a floating assistant that follows them across the app; on-device conversation history; responses that stream in so it never feels frozen; and a pre-submit cost estimate so they walk into the repair already informed. Every one of those is interface and state-management work that turns a raw API into something a frightened driver on the roadside can actually use.</p>
+    <figure class="shot phone-shot">
+      <img src="assets/5893283652760702894.jpg" alt="MOTOBOT — the usable experience built around the AI." loading="lazy">
+      <figcaption>MOTOBOT — the usable experience built around the AI.</figcaption>
+    </figure>
+    <h2>The details that earn trust</h2>
+    <p>Reliability lives in the small things, and I sweated them: raw GPS coordinates resolved into readable place names so no one ever sees a string of numbers; optimistic updates that change the screen instantly without ever flickering back; skeleton loaders so the app never looks broken while data arrives; an automatic, secure session timeout; and graceful handling for when the network simply is not there. Software people lean on during a breakdown is held to a higher bar than a demo — fast, clear and dependable on a real phone, on a real roadside. That bar shaped every screen I built.</p>
+  </div>
+  <div class="article-foot">
+    <a href="index.html#blog" class="btn btn-ghost">← Back to all articles</a>
+    <a href="https://www.linkedin.com/company/motofix-uganda/" target="_blank" rel="noopener" class="btn btn-primary">Follow MOTOFIX on LinkedIn ↗</a>
+  </div>
+</article>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div>
+      <div class="brand-foot"><img src="assets/motofix-logo.png" alt="MOTOFIX" class="brand-logo-foot"></div>
+      <p class="foot-tag">Roadside assistance, reimagined for Uganda.</p>
+    </div>
+    <div class="foot-meta">
+      <a href="https://www.linkedin.com/company/motofix-uganda/" target="_blank" rel="noopener">MOTOFIX Uganda on LinkedIn ↗</a>
+      <p>A final-year project — Bachelor of Science in Software Engineering,<br>School of Computing and Informatics Technology, Makerere University.</p>
+      <p class="copyright">© 2026 MOTOFIX Uganda. All rights reserved.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
