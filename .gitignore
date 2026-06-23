@@ -16,6 +16,8 @@
 *firebase-adminsdk*.json
 *.pem
 *.key
+# The shared secrets bundle (scripts/bundle-env.ps1) — share privately, never commit.
+motofix-env-bundle.zip
 
 # ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
