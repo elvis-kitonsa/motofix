@@ -1,4 +1,7 @@
 # app/routers/users.py
+# Shared endpoints for working with user accounts after login — looking up a user's
+# details, updating their profile, saving their FCM token (so they can receive push
+# notifications), and similar account housekeeping used across the apps.
 
 import logging
 from typing import Optional, List

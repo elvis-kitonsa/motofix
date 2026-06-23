@@ -1,3 +1,6 @@
+// TermsOfService.tsx — the static terms-of-service screen (the rules of using MOTOFIX).
+// Reached from Settings; content only, no logic.
+
 import { useNavigate } from 'react-router-dom';
 import type { ElementType } from 'react';
 import {

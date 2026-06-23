@@ -1,3 +1,10 @@
+// useDashboardData.ts — React Query hooks that supply the dashboard with live data.
+//
+// Each hook wraps a fetch function from lib/api.ts and adds auto-refreshing on a timer
+// (refetchInterval) plus caching and retries, so the control-room screens stay current
+// on their own without manual refreshes. Components call e.g. useDashboardStats() and
+// get back { data, isLoading, error } to render.
+
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import {
   fetchDashboardStats,

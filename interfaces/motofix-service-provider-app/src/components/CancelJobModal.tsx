@@ -1,3 +1,6 @@
+// CancelJobModal.tsx — the confirmation popup when a mechanic cancels a job they accepted.
+// Requires a reason and warns that cancelling counts against them (cancellation strikes).
+
 import { useEffect, useState } from 'react'
 import { X, AlertTriangle, Loader2, Ban } from 'lucide-react'
 import { C } from '@/styles/tokens'

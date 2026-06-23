@@ -1,4 +1,6 @@
 # motofix-mechanics-service: app/schemas.py
+# The shapes of mechanic data the API accepts and returns (validated by FastAPI).
+# These define which fields are required vs optional when creating or updating a mechanic.
 
 from pydantic import BaseModel
 from typing import Optional

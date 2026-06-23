@@ -1,3 +1,7 @@
+// OutOfFuelFlow.tsx — the dedicated flow for "I've run out of fuel". It finds nearby fuel
+// stations (from OpenStreetMap) on a map with directions, includes the AI fuel advisor
+// (is this fuel safe for my car?), and can request fuel delivery help.
+
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { type LL } from '@/utils/routeFollow';
 import { createPortal } from 'react-dom';

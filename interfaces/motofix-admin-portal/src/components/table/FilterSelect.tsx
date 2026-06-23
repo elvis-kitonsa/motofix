@@ -1,3 +1,6 @@
+// FilterSelect.tsx — a labelled dropdown for filtering a table (e.g. by status). A small
+// wrapper around the UI Select used inside TableFilters.
+
 import {
   Select,
   SelectContent,

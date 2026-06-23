@@ -1,3 +1,7 @@
+// utils/formatters.ts — small display helpers for turning raw values into nicely formatted
+// text: formatUGX for shilling amounts, formatRelativeTime for "2 hours ago"-style times, etc.
+// Pure formatting only — no data fetching.
+
 export function formatUGX(amount: number): string {
   return 'UGX ' + amount.toLocaleString('en-UG', { maximumFractionDigits: 0 })
 }

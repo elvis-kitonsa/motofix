@@ -56,17 +56,24 @@ export interface JobSim {
 
 export function useJobSim(opts: {
   isLoaded: boolean
-  active: boolean                 // status === 'en_route'
+  active: boolean                 // a mechanic is assigned & heading over (accepted/en_route)
+                                  // → BUILD + show the fixed route and both endpoints
+  advancing?: boolean             // status === 'en_route' → ADVANCE the pin/ETA along it
+                                  // (defaults to `active` for back-compat)
   driver: LL | null               // the request's pinned location (canonical on both apps)
   seed: string                    // request id
   enRouteAt?: string | null
 }): JobSim {
   const { isLoaded, active, driver, seed, enRouteAt } = opts
+  const advancing = opts.advancing ?? active
 
   const metaRef = useRef<RouteMeta | null>(null)
   const startRef = useRef<LL | null>(null)
   const reqRef = useRef(false)
   const seedRef = useRef('')
+  // Frozen journey-clock start (ms). Used ONLY when en_route_at is absent so the
+  // progress can't reset every render — see the progress note below.
+  const clockStartRef = useRef<number | null>(null)
   const [, setTick] = useState(0)
 
   // New job → discard the old fixed route so it's rebuilt for this request.
@@ -76,9 +83,20 @@ export function useJobSim(opts: {
       reqRef.current = false
       metaRef.current = null
       startRef.current = null
+      clockStartRef.current = null
       setTick(x => x + 1)
     }
   }, [seed])
+
+  // Freeze a local journey start the FIRST time we go en route without a shared
+  // en_route_at. Without this, parseTs(null) returns Date.now() every render, so
+  // progress is pinned to ~0 (jittering with the server-clock offset) and the
+  // route never visibly shrinks. When en_route_at IS present we use it directly
+  // (below) so both apps stay in lock-step.
+  useEffect(() => {
+    if (!advancing || enRouteAt) { clockStartRef.current = null; return }
+    if (clockStartRef.current == null) clockStartRef.current = serverNow()
+  }, [advancing, enRouteAt])
 
   // Fetch the fixed shortest road route ONCE, from the deterministic start to
   // the driver. It does not change as the pin advances.
@@ -122,15 +140,21 @@ export function useJobSim(opts: {
 
   // Animation clock — re-render a few times a second while the journey is live.
   useEffect(() => {
-    if (!active) return
+    if (!advancing) return
     const t = setInterval(() => setTick(x => x + 1), 400)
     return () => clearInterval(t)
-  }, [active])
+  }, [advancing])
 
   const meta = metaRef.current
   // serverNow() (not the device clock) so every device shows the same point.
-  const progress = active
-    ? Math.max(0, Math.min(1, (serverNow() - parseTs(enRouteAt)) / SIM_MS))
+  // Prefer the shared en_route_at (keeps both apps in lock-step); fall back to the
+  // frozen local start so the journey still advances when the snapshot didn't
+  // carry en_route_at.
+  const startMs = enRouteAt ? parseTs(enRouteAt) : clockStartRef.current
+  // Progress only moves while advancing (en route). At the accepted stage it stays
+  // 0, so the route is fully drawn with the pin parked at its start.
+  const progress = advancing && startMs != null
+    ? Math.max(0, Math.min(1, (serverNow() - startMs) / SIM_MS))
     : 0
 
   let mechPos: LL | null = null

@@ -1,3 +1,7 @@
+// ReminderOptInPrompt.tsx — a one-time prompt asking the driver whether they'd like
+// maintenance reminders (and notification permission). Shown once; once answered we
+// remember the choice so we don't ask again.
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, X } from 'lucide-react';

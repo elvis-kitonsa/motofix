@@ -1,3 +1,7 @@
+// JobDetailModal.tsx — the full-details popup for a job: customer, fault, location, any
+// voice/photo, and the action buttons that move it through its stages (accept, start,
+// complete, cancel, message the driver).
+
 import { useEffect, useState } from 'react'
 import { X, MapPin, Wrench, User, Ban, CheckCircle, MessageCircle, Play, Pause } from 'lucide-react'
 import { C } from '@/styles/tokens'

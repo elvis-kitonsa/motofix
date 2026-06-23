@@ -1,3 +1,6 @@
+// BreakdownHotspotMap.tsx — a map highlighting where breakdowns cluster ("hotspots"),
+// so admins can see which areas have the most demand. Built on Google Maps overlays.
+
 import { useState } from 'react';
 import { GoogleMap, useLoadScript, OverlayView } from '@react-google-maps/api';
 import { Flame, MapPin, Activity, X, TrendingUp } from 'lucide-react';

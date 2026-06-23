@@ -1,3 +1,6 @@
+// AnalyticsCharts.tsx — the dashboard's analytics graphs (built with Recharts), turning
+// the platform's numbers into bar/line charts admins can read at a glance.
+
 import { useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,

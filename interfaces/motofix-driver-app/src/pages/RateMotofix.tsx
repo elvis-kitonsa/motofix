@@ -1,3 +1,6 @@
+// RateMotofix.tsx — the screen asking the driver to rate the MOTOFIX app/service overall
+// (stars + optional comment). Distinct from rating an individual mechanic.
+
 import { useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {

@@ -1,3 +1,7 @@
+// SOSFaultPicker.tsx — the quick "what kind of help do you need?" picker reached from the
+// SOS button: pick the fault type (tyre, battery, fuel, etc.), which routes into the right
+// flow (e.g. the out-of-fuel flow, or describing the issue to dispatch a mechanic).
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import OutOfFuelFlow from './OutOfFuelFlow';

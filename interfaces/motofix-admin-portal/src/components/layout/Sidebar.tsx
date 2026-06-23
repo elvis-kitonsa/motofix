@@ -1,3 +1,7 @@
+// Sidebar.tsx — the left navigation menu of the admin portal: links to every section
+// (dashboard, requests, providers, drivers, payments, etc.) plus logout. Highlights the
+// active page.
+
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { clearAuthToken } from '@/lib/api';

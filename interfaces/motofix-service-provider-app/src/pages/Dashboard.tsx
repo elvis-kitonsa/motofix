@@ -1,7 +1,12 @@
+// Dashboard.tsx — the main logged-in screen and the heart of the mechanic app. It hosts the
+// bottom-tab area (Home / Jobs / Earnings / Profile via pages/tabs), listens on the WebSocket
+// for incoming jobs (showing the IncomingRequestModal) and live job updates, and manages the
+// provider's online/offline state and active-job flow. The biggest page in this app.
+
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { mechanicService, jobService, notificationService, reviewService, normalizeRequest } from '@/config/api'
+import { mechanicService, jobService, notificationService, reviewService, feesService, normalizeRequest } from '@/config/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWS } from '@/contexts/WebSocketContext'
 import { SIM_MINUTES } from '@/hooks/useJobSim'
@@ -65,6 +70,9 @@ export default function Dashboard() {
   const [isAvailable,   setIsAvailable]   = useState<boolean>(
     () => localStorage.getItem('sp_availability') !== 'false'
   )
+  // Platform-fee gate: once a mechanic owes the 3-job cap (UGX 30,000) they can't go
+  // online until they settle. Drives the "start offline + blocked toggle" behaviour.
+  const [feeGated,      setFeeGated]      = useState(false)
   const [activeRequest, setActiveRequest] = useState<ServiceRequest | null>(null)
   const [pendingAlert,  setPendingAlert]  = useState<ServiceRequest | null>(null)
   const [unreadCount,   setUnreadCount]   = useState(0)
@@ -113,14 +121,20 @@ export default function Dashboard() {
      instead of waiting on the dispatch-proxied job/pending calls. */
   useEffect(() => {
     // 1) Profile first & on its own → name + rating + stats appear right away.
-    mechanicService.getProfile().then(res => {
+    mechanicService.getProfile().then(async res => {
       const p: MechanicProfile = res.data
       setProfile(p)
       mechIdRef.current = p.id
       loadHistoryStats(p.id)
+      // Check the platform-fee gate before deciding availability: a gated mechanic
+      // (3 unpaid jobs) ALWAYS logs in Offline and can't go online until they pay.
+      let gated = false
+      try { const fr = await feesService.getFees(p.id); gated = !!fr.data?.gated } catch {}
+      setFeeGated(gated)
       const explicitlyOffline = localStorage.getItem('sp_availability') === 'false'
-      if (explicitlyOffline) {
+      if (gated || explicitlyOffline) {
         setIsAvailable(false)
+        localStorage.setItem('sp_availability', 'false')
         if (p.is_available) mechanicService.updateAvailability(false).catch(() => {})
       } else {
         setIsAvailable(true)
@@ -190,12 +204,22 @@ export default function Dashboard() {
   // Mirror the active job into a ref so delayed timeouts see the latest value.
   useEffect(() => { activeRequestRef.current = activeRequest }, [activeRequest])
 
+  /* ── Re-check the fee gate whenever the Home tab is shown ───────────────────
+     The online toggle lives on Home, so settling fees in the Fees tab and coming
+     back must free the toggle immediately. */
+  useEffect(() => {
+    if (activeTab !== 'home' || mechIdRef.current == null) return
+    feesService.getFees(mechIdRef.current)
+      .then(fr => setFeeGated(!!fr.data?.gated))
+      .catch(() => {})
+  }, [activeTab])
+
   /* ── WebSocket message handler ───────────────────────────── */
   useEffect(() => {
     const msg = lastMessage as {
       type?: string; job?: Record<string, unknown>
       service_request_id?: string; job_id?: string | number; status?: string
-      message?: string; sender_id?: string; cancelled_by?: string
+      message?: string; sender_id?: string; cancelled_by?: string; cancel_reason?: string
       request?: Record<string, unknown>
     } | null
     if (!msg?.type) return
@@ -213,6 +237,29 @@ export default function Dashboard() {
           if (activeRequestRef.current) return              // already on another job
           setPendingAlert(prev => prev ?? req)              // don't override an open alert
         }, DISPATCH_FOLLOW_DELAY_MS)
+      }
+    }
+
+    // A driver can cancel a request BEFORE any mechanic accepts it. If that job is
+    // the one currently popped up (incoming-job countdown), dismiss it so the timer
+    // doesn't keep running for a job that no longer exists. declinedIds also stops
+    // it re-surfacing from a later poll of the pending list.
+    if (msg.type === 'status_update' && msg.status === 'cancelled') {
+      const cid = String(msg.job_id ?? msg.service_request_id ?? '')
+      if (cid) {
+        declinedIds.current.add(cid)
+        // Close the incoming-job popup if it's this (now-cancelled) job. The pending
+        // count self-corrects on the next poll (it re-sets to the live total).
+        const reason = (msg.cancel_reason || '').trim()
+        setPendingAlert(prev => {
+          if (prev && String(prev.id) === cid) {
+            const who = prev.driver_name ?? 'The driver'
+            toast(reason ? `${who} cancelled this request — “${reason}”` : `${who} cancelled this request.`,
+              { icon: 'ℹ️', duration: 7000 })
+            return null
+          }
+          return prev
+        })
       }
     }
 
@@ -240,6 +287,8 @@ export default function Dashboard() {
             if (snap.service_started_at) merged.service_started_at = snap.service_started_at
             if (snap.completed_at)       merged.completed_at       = snap.completed_at
             if (snap.eta_minutes != null) merged.eta_minutes       = snap.eta_minutes
+            if (snap.actual_fee != null)  merged.actual_fee        = snap.actual_fee
+            if (snap.service_note)        merged.service_note       = snap.service_note
             const cb = msg.request?.completion_by
             if (cb) (merged as unknown as Record<string, unknown>).completion_by = cb
           }
@@ -249,9 +298,12 @@ export default function Dashboard() {
         // back out of Today / This-Week; completion keeps it and refreshes rating.
         loadHistoryStats(mechIdRef.current)
         if (msg.status === 'cancelled') {
-          // The driver pulled out → make sure the mechanic isn't left in the dark.
+          // The driver pulled out → make sure the mechanic isn't left in the dark,
+          // and tell them WHY (the reason the driver picked when cancelling).
           if (msg.cancelled_by !== 'mechanic') {
-            toast.error(`${activeRequest.driver_name ?? 'The driver'} cancelled this request.`, { duration: 7000 })
+            const who = activeRequest.driver_name ?? 'The driver'
+            const reason = (msg.cancel_reason || '').trim()
+            toast.error(reason ? `${who} cancelled this job — “${reason}”` : `${who} cancelled this job.`, { duration: 8000 })
           }
           setActiveRequest(null)
           switchTab('home')
@@ -295,6 +347,43 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAvailable, !!activeRequest])
 
+  /* ── Active-job cancellation watchdog ───────────────────────
+     The live WS handler above already closes a job the instant the driver cancels.
+     This is the BACKUP for when that event is missed (socket drop / app backgrounded):
+     while the mechanic is on a still-running job, we poll their current job; if the
+     server no longer lists it, the driver pulled out, so we close it and notify exactly
+     like the WS path. Gated to pre-completion statuses so finishing a job never trips it
+     (the driver can't cancel once it's awaiting confirmation anyway), and it needs two
+     empty polls in a row to shrug off a transient network blip. */
+  useEffect(() => {
+    const LIVE = ['accepted', 'en_route', 'arrived', 'in_progress']
+    if (!activeRequest || !LIVE.includes(activeRequest.status)) return
+    const localId = String(activeRequest.id)
+    const driverName = activeRequest.driver_name ?? 'The driver'
+    let stop = false
+    let emptyStreak = 0
+    const check = async () => {
+      try {
+        const res = await jobService.getActive()
+        if (stop) return
+        const stillMine = (res.data ?? []).some(j => String(j.id) === localId)
+        if (stillMine) { emptyStreak = 0; return }
+        emptyStreak += 1
+        if (emptyStreak < 2) return            // ignore a single transient blip
+        // The server no longer lists this live job → the driver cancelled it.
+        toast.error(`${driverName} cancelled this job.`, { duration: 8000 })
+        setActiveRequest(null)
+        switchTab('home')
+        loadHistoryStats(mechIdRef.current)
+      } catch {
+        emptyStreak = 0                        // network error ≠ cancellation; retry next tick
+      }
+    }
+    const interval = setInterval(check, 8000)
+    return () => { stop = true; clearInterval(interval) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRequest?.id, activeRequest?.status])
+
   /* ── Background location auto-update ────────────────────── */
   useEffect(() => {
     const secure = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
@@ -325,6 +414,9 @@ export default function Dashboard() {
 
   /* ── Availability toggle ─────────────────────────────────── */
   const handleToggleAvailable = async () => {
+    // Safety net: a gated mechanic can never flip to online (TopHeader already
+    // intercepts the tap to show the fee warning instead of calling this).
+    if (!isAvailable && feeGated) return
     const next = !isAvailable
     setIsAvailable(next)
     try {
@@ -445,6 +537,8 @@ export default function Dashboard() {
             spn={spn}
             isAvailable={isAvailable}
             onToggleAvailable={handleToggleAvailable}
+            feeGated={feeGated}
+            onProceedToFees={() => switchTab('earnings')}
             unreadCount={unreadCount}
             onBellClick={() => {
               setUnreadCount(0)

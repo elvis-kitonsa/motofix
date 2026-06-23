@@ -1,3 +1,11 @@
+// useWebSocket.ts — opens and maintains the live connection to the server.
+//
+// Given a logged-in user and token, it connects to the server's /ws/jobs channel and
+// keeps that connection healthy: it sends a "ping" every 30s to stop it timing out,
+// and automatically reconnects 3s after any drop. Exposes isConnected, the latest
+// message received, and a sendMessage() function. Used by WebSocketContext, which
+// shares one connection across the whole app.
+
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 export function useWebSocket(userId: string | undefined, token: string | null) {

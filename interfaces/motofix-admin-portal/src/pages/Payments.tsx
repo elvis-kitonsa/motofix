@@ -1,3 +1,6 @@
+// Payments.tsx — the admin view of money moving through the platform: a table of payment
+// transactions plus summary stats (collected, paid out, etc.).
+
 import { useState, useMemo } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';

@@ -1,3 +1,6 @@
+// PartsOrders.tsx — the driver's history of spare-parts orders they've placed (what they
+// ordered, from which dealer, estimated cost, status), with a way to re-contact the dealer.
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShoppingBag, Phone, Loader2, Package, Clock } from 'lucide-react';

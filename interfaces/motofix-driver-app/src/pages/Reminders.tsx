@@ -1,3 +1,7 @@
+// Reminders.tsx — the vehicle maintenance checklist screen: daily/weekly/monthly checks
+// plus do's & don'ts (from lib/reminders). The driver ticks items off; due items drive
+// the Home badge and the reminder nudges. Supports adding custom items.
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, RotateCcw, Sparkles, Plus, Trash2, RefreshCw, X, Check, Settings } from 'lucide-react';

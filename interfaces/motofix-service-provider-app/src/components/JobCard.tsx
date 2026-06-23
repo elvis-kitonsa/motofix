@@ -1,3 +1,6 @@
+// JobCard.tsx — the summary tile for one job in the mechanic's lists (available/active/past):
+// shows the fault, location, time and status, and is tappable to open the full job details.
+
 import {
   Zap, Settings, Circle, Droplets, Key, Truck,
   Thermometer, HelpCircle, MapPin, Clock, User, Phone,

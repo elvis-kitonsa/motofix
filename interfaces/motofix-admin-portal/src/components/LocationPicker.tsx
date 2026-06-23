@@ -1,3 +1,6 @@
+// LocationPicker.tsx — a Google Map for setting a location (e.g. a provider's address):
+// drag the pin or search, and it reports the chosen coordinates + address back to the form.
+
 import { useState, useCallback } from 'react';
 import { useLoadScript, GoogleMap, Marker } from '@react-google-maps/api';
 import { Loader2 } from 'lucide-react';

@@ -1,3 +1,6 @@
+// DeleteMechanicDialog.tsx — the confirmation popup before removing a mechanic. Requires
+// a reason and asks the admin to confirm, so deletions are deliberate and recorded.
+
 import {
   Dialog,
   DialogContent,

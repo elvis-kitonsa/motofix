@@ -1,3 +1,7 @@
+// SparePartsDealer.tsx — the spare-parts hub screen: find nearby parts dealers on a map
+// (admin-registered dealers first, then OSM/branded fallbacks), browse self-fix guides,
+// ask MOTOBOT, and open the order flow. Pulls together several parts-related features.
+
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ElementType } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -7,7 +11,7 @@ import { useLoadScript, GoogleMap, Marker, DirectionsRenderer } from "@react-goo
 import { ArrowLeft, Phone, Star, MapPin, X, Navigation, ShoppingBag, Loader2, ChevronRight, MessageCircle, ReceiptText, Clock, Store, Plus, Check, Wrench, Bot, Truck } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/hooks/useAuth";
-import { partsService, motobotService, PartsOrder, PartPriceItem } from "@/config/api";
+import { partsService, motobotService, dealerService, PartsOrder, PartPriceItem } from "@/config/api";
 import { generateSimDealers, enrichDealer, SimDealer } from "@/lib/simDealers";
 import { toast } from "sonner";
 
@@ -273,9 +277,27 @@ export default function SparePartsDealer() {
       let dl: SimDealer[] = [];
       if (c) {
         try {
-          const res = await motobotService.findDealers(c.lat, c.lng);
+          // Admin-registered dealer directory first — these are the real businesses.
+          const res = await dealerService.searchNearby(c.lat, c.lng);
           const raw = res.data?.dealers ?? [];
-          dl = raw.length ? raw.map(enrichDealer).sort((a, b) => a.distance_km - b.distance_km) : generateSimDealers(c);
+          dl = raw.length
+            ? raw
+                .map((d) =>
+                  enrichDealer({
+                    place_id: `dealer-${d.id}`,
+                    name: d.name,
+                    vicinity: d.address || d.location || "Kampala",
+                    lat: d.latitude ?? c!.lat,
+                    lng: d.longitude ?? c!.lng,
+                    distance_km: d.distance_km ?? 0,
+                    phone: d.phone || null,
+                    category: "",
+                    specialization: d.specialty || null,
+                    tagline: d.description || null,
+                  }),
+                )
+                .sort((a, b) => a.distance_km - b.distance_km)
+            : generateSimDealers(c);
         } catch {
           dl = generateSimDealers(c);
         }

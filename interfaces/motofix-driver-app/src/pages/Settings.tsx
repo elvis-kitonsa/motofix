@@ -1,3 +1,7 @@
+// Settings.tsx — the app settings screen: theme (light/dark), notification and location
+// permissions, privacy options, and links to legal pages. Preferences are saved locally
+// and synced to the server so they follow the user across devices.
+
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {

@@ -1,3 +1,6 @@
+// ProviderSplash.tsx — a branded "provider" intro/transition screen ("/splash") in the
+// onboarding flow, introducing the mechanic side of MOTOFIX before sign-in/apply.
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'

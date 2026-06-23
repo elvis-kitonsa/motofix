@@ -1,3 +1,13 @@
+// useAuth.ts — the hook every screen uses to know "is someone logged in, and who?".
+//
+// It exposes: user, isAuthenticated, isLoading, and login()/logout() functions.
+// How login persists: on success we save the token + user in the browser
+// (localStorage) so the user stays logged in across refreshes. On startup it shows
+// the cached user instantly (no flicker) then quietly re-checks with the server via
+// /auth/me — only logging the user out if the server says the token is truly invalid
+// (a 401), not on a flaky network. Login/logout fire a 'motofix:auth-changed' event
+// so other parts of the app (requests, websocket) can react.
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { authService } from '@/config/api';
 import { startActivity, clearInactivity } from '@/utils/sessionTimeout';

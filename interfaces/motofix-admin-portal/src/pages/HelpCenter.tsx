@@ -1,3 +1,6 @@
+// HelpCenter.tsx — the admin help/FAQ screen: searchable guidance on how to use the portal,
+// grouped by topic. Static reference content.
+
 import { useState, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {

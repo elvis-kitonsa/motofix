@@ -1,3 +1,7 @@
+// Mechanics.tsx — SUPERSEDED / not currently routed. An older read-only mechanics list;
+// the live screen that manages mechanics + tow providers is Providers.tsx. Kept for
+// reference — safe to remove once confirmed nothing depends on it.
+
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';

@@ -1,3 +1,6 @@
+// RequestsList.tsx — the driver's request history screen ("/history"): a list of all
+// their past and current service requests (using RequestCard), newest first.
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 

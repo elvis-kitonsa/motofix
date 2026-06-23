@@ -1,3 +1,7 @@
+// Applications.tsx — the list of provider applications waiting for admin review (people
+// applying to join as mechanics/tow providers), each linking to its detail page to approve
+// or reject.
+
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';

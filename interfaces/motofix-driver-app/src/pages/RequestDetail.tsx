@@ -1,3 +1,8 @@
+// RequestDetail.tsx — the live screen for one active request. This is the most complex
+// driver page: it shows the job status, the mechanic's live position on a map (with the
+// shrinking route + ETA), call/chat actions, and the end-of-job FinalPaymentFlow. It
+// reacts to real-time updates from RequestContext as the mechanic accepts → arrives → finishes.
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -291,12 +296,13 @@ function MapOverlays({
 
 function TrackingMap({
   driverLat, driverLng,
-  arrived, simActive, requestId, enRouteAt,
+  arrived, assigned, simActive, requestId, enRouteAt,
   onRouteUpdate, onProgress,
 }: {
   driverLat?: number | null; driverLng?: number | null;
   arrived?: boolean;
-  simActive?: boolean;
+  assigned?: boolean;       // mechanic accepted (accepted/en_route) → draw full route + both pins
+  simActive?: boolean;      // en_route → advance the mechanic pin
   requestId?: string | number | null;
   enRouteAt?: string | null;
   onRouteUpdate?: (info: { duration: string; distance: string } | null) => void;
@@ -319,23 +325,27 @@ function TrackingMap({
 
   const hasDriver = driverLat != null && driverLng != null;
   const driverPos = hasDriver ? { lat: driverLat as number, lng: driverLng as number } : null;
-  const enRoute   = !!simActive && !arrived;
+  const enRoute     = !!simActive && !arrived;             // pin advances
+  const showJourney = !!(assigned ?? simActive) && !arrived; // route + both pins drawn
 
   // Deterministic shared simulation — both apps compute the SAME route, pin and
-  // (monotonic) ETA from the request location + id + en_route time. No streamed
-  // positions, so the two screens stay in lock-step and the ETA only counts down.
+  // (monotonic) ETA from the request location + id + en_route time. The route is
+  // drawn as soon as the job is accepted; the pin only advances once en route.
   const sim = useJobSim({
     isLoaded,
-    active: enRoute,
+    active: showJourney,
+    advancing: enRoute,
     driver: driverPos,
     seed: String(requestId ?? ''),
     enRouteAt: enRouteAt ?? null,
   });
 
-  // The mechanic marker rides the fixed route while en route; once arrived it
-  // sits with the driver.
-  const mechDisplay = arrived ? driverPos : (enRoute ? sim.mechPos : null);
-  const remainingRoute = enRoute ? sim.remaining : null;
+  // The mechanic marker is parked at the route start while accepted, rides the route
+  // while en route, and once arrived it sits with the driver.
+  const mechDisplay = arrived ? driverPos : (sim.mechPos ?? null);
+  // Draw the route ONLY during the journey — sim.remaining stays populated from the
+  // cached route after arrival, so without this gate the line lingers once arrived.
+  const remainingRoute = showJourney ? sim.remaining : null;
 
   // Push progress (drives the arrival bar) + a monotonic ETA/distance to parent.
   useEffect(() => { if (enRoute) onProgress?.(sim.progress); }, [sim.progress, enRoute, onProgress]);
@@ -395,7 +405,10 @@ function TrackingMap({
       {driverPos   && <Marker position={driverPos}   icon={driverIcon} title="Your location" />}
       {mechDisplay && <Marker position={mechDisplay} icon={mechIcon}   title="Mechanic" />}
       {remainingRoute && remainingRoute.length >= 2 && (
-        <Polyline path={remainingRoute} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
+        // key tracks the journey so the line is re-drawn as the mechanic advances —
+        // otherwise its path freezes at the full route and the pin just slides over a
+        // static line instead of the road shrinking toward the driver.
+        <Polyline key={`route-${remainingRoute.length}`} path={remainingRoute} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
       )}
     </>
   );
@@ -1076,18 +1089,24 @@ export default function RequestDetail() {
     if (!id) return;
     const reason = cancelReason === 'Other' ? cancelOther.trim() : cancelReason;
     if (!reason) { toast.error('Please select a reason'); return; }
-    setIsCancelling(true);
+
+    // Optimistic cancel: reflect it on screen IMMEDIATELY instead of waiting for the
+    // server round-trip (which used to leave the modal stuck on "Cancelling…" until a
+    // manual refresh). markCancelled flips it in the shared store and keeps it cancelled
+    // until the server confirms; we also flip the local copy and leave the screen at once.
+    markCancelled(id);
+    setRequest(prev => (prev ? { ...prev, status: 'cancelled' } : prev));
+    setCancelPhase(null);
+    toast.success('Request cancelled');
+    navigate(-1);
+
+    // Tell the server in the background. If it rejects, undo the optimistic cancel so the
+    // request reappears as active and the driver knows it didn't go through.
     try {
-      await requestsService.updateStatus(id, 'cancelled');
-      markCancelled(id);
-      setCancelPhase(null);
-      toast.success('Request cancelled');
-      navigate(-1);
+      await requestsService.updateStatus(id, 'cancelled', reason);
     } catch (err: any) {
       revertCancelled(id);
-      toast.error(err.response?.data?.detail || 'Failed to cancel request');
-    } finally {
-      setIsCancelling(false);
+      toast.error(err.response?.data?.detail || "Couldn't cancel the request — please try again.");
     }
   };
 
@@ -1299,6 +1318,7 @@ export default function RequestDetail() {
               driverLat={mapCoords?.lat ?? gpsLat}
               driverLng={mapCoords?.lon ?? gpsLng}
               arrived={request.status === 'arrived'}
+              assigned={['accepted', 'en_route'].includes(request.status)}
               simActive={request.status === 'en_route'}
               requestId={request.id}
               enRouteAt={(request as any).en_route_at}

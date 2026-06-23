@@ -1,3 +1,7 @@
+// AccountSettings.tsx — broader platform/business configuration (e.g. region, operating
+// hours, currency, commission/fees, request auto-assignment). Sits alongside Settings.tsx,
+// which covers appearance + core platform toggles.
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';

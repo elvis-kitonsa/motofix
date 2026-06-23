@@ -1,3 +1,21 @@
+// config/api.ts — the single place that talks to the backend.
+//
+// Every network call the driver app makes goes through here. The layout:
+//   1. Base URLs — one per backend microservice (auth, requests, payments, etc).
+//      An empty string means "use the Vite dev proxy" during local development.
+//   2. axios instances — one pre-configured HTTP client per service (authApi,
+//      requestsApi, ...), each with its own timeout and cookie settings.
+//   3. addAuthInterceptor — automatically attaches the logged-in user's token to
+//      every request, and logs requests/responses to the console for debugging.
+//   4. Service objects (authService, requestsService, diagnosisService, ...) — the
+//      friendly functions the rest of the app actually calls, e.g.
+//      `requestsService.getAll()`. Pages should import THESE, not raw axios.
+//   5. TypeScript interfaces — the exact shape of the data each endpoint returns,
+//      kept in sync with the backend's Pydantic schemas.
+//
+// So when a page needs data: call a service function here → it hits the right
+// microservice → the token is added automatically → you get typed data back.
+
 import axios from 'axios';
 import { noteServerDate } from '@/utils/serverClock';
 
@@ -62,10 +80,15 @@ export const insuranceApi = axios.create({
   timeout: 60000, // 60s — photos can make payloads large
 });
 
-// JWT interceptor for authenticated requests
+// Attaches the login token to outgoing requests so we don't have to add it by hand
+// every time. An "interceptor" is a hook axios runs on every request/response — here
+// we use it to (a) add the saved token, (b) fix the Content-Type for file uploads,
+// and (c) log what's being sent/received. Applied to every API instance below.
 const addAuthInterceptor = (instance: ReturnType<typeof axios.create>) => {
   instance.interceptors.request.use(
     (config) => {
+      // Pull the saved login token (set at login) and send it as a Bearer token,
+      // which is how the backend knows who is making the request.
       const token = localStorage.getItem('motofix_token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
@@ -202,8 +225,10 @@ export const requestsService = {
   
   getById: (id: string) => requestsApi.get(`/requests/${id}`),
   
-  updateStatus: (id: string, status: string) =>
-    requestsApi.patch(`/requests/${id}/status`, null, { params: { status } }),
+  updateStatus: (id: string, status: string, cancelReason?: string) =>
+    requestsApi.patch(`/requests/${id}/status`, null, {
+      params: { status, ...(cancelReason ? { cancel_reason: cancelReason } : {}) },
+    }),
   
   getCallPartner: (id: string) =>
     requestsApi.get<{ phone: string }>(`/requests/${id}/call-partner`),
@@ -408,6 +433,30 @@ export const motobotService = {
     diagnosisApi.post<DealersResult>('/parts-dealers', { lat, lng }),
 };
 
+// Admin-managed spare-parts dealer directory (dispatch service). These are the
+// businesses an admin registered — shown first in the driver app, with the
+// branded sim dealers used only as a fallback when none are nearby.
+export interface DirectoryDealer {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  specialty: string;
+  description: string;
+  verified: boolean;
+  distance_km: number | null;
+}
+
+export const dealerService = {
+  searchNearby: (lat: number, lng: number, radiusKm = 30) =>
+    requestsApi.get<{ total: number; dealers: DirectoryDealer[] }>('/dealers/search', {
+      params: { lat, lon: lng, radius_km: radiusKm },
+    }),
+};
+
 // Matching service — find nearby mechanics
 export interface MechanicCandidate {
   mechanic_id: number;
@@ -522,6 +571,15 @@ export const insuranceService = {
     insuranceApi.get<ApplicationRecord[]>('/applications'),
 };
 
+// A single customer review shown on the mechanic's public profile
+export interface MechanicReview {
+  rating: number;
+  comment: string;
+  created_at: string | null;
+  reviewer_name: string;
+  service_type: string | null;
+}
+
 // Mechanic public profile (no auth required — safe public fields only)
 export interface MechanicPublicProfile {
   id: number;
@@ -533,6 +591,7 @@ export interface MechanicPublicProfile {
   jobs_completed: number;
   profile_photo_url: string | null;
   garage_name: string | null;
+  reviews?: MechanicReview[];
 }
 
 export const mechanicService = {

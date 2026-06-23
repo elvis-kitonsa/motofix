@@ -1,3 +1,6 @@
+// Splash.tsx — the very first intro screen ("/intro"): a brief branded animation that then
+// continues into the welcome/entry flow. First step of the app's intro sequence.
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'

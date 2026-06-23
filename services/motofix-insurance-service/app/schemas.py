@@ -1,3 +1,8 @@
+# app/schemas.py
+# The shapes of data the insurance API accepts and returns (validated by FastAPI).
+# "...Create" models = what a driver sends in (a new application or claim);
+# "...Response" models = what we send back. Read these to know the exact fields.
+
 from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel, Field

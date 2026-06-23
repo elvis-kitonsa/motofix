@@ -1,3 +1,11 @@
+# app/services/sms.py
+# Sends text messages (SMS) to phones — mainly the one-time codes for login/sign-up.
+# We use "Africa's Talking", an SMS provider that works well across Ugandan networks.
+#
+# Handy for development: if no API key is set, send_sms() doesn't actually send
+# anything — it just prints the message to the server log so you can still read the
+# OTP and keep testing without spending SMS credit.
+
 import os
 import logging
 import httpx

@@ -1,3 +1,6 @@
+// ApplicationDetail.tsx — one provider application in full (documents, details), where the
+// admin reviews it and approves or rejects the applicant.
+
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

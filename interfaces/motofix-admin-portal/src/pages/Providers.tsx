@@ -1,3 +1,7 @@
+// Providers.tsx — the live screen for managing service providers (mechanics + tow
+// providers): list them, view details, verify/ban/reinstate, edit, delete, and see
+// their cancellation strikes / platform fees. The main provider-admin page.
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

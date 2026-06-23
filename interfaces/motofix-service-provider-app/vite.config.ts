@@ -36,6 +36,10 @@ export default defineConfig({
       '/providers':     { target: 'http://127.0.0.1:8000', changeOrigin: true },
       '/mechanics':     { target: 'http://127.0.0.1:8002', changeOrigin: true },
       '/requests':      { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      // Platform-fee ledger (GET/POST /fees/...) lives in the dispatch service too. Without
+      // this, /fees fell through to the SPA fallback and returned index.html, which the Fees
+      // tab read as an empty balance → the bogus "Nothing to pay". Route it to dispatch.
+      '/fees':          { target: 'http://127.0.0.1:8001', changeOrigin: true },
       // Diagnosis service (MOTOBOT chat, greetings, estimates) — proxied so the HTTPS dev
       // app reaches it same-origin (direct http://localhost:8007 is mixed-content + CORS blocked).
       '/chat':             { target: 'http://127.0.0.1:8007', changeOrigin: true },

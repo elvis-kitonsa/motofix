@@ -1,3 +1,7 @@
+// NetworkBanner.tsx — shows a small "you're offline" bar whenever the device loses
+// its internet connection, and hides itself again once back online. Rendered once at
+// the top of the app (in App.tsx). Relies on the browser's online/offline events.
+
 import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
 

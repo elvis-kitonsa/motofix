@@ -1,3 +1,6 @@
+// Profile.tsx — the logged-in admin's own profile screen: view/edit their name and email
+// (via updateAdminProfile) and see their account info.
+
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { getAdminInfo } from '@/lib/api';

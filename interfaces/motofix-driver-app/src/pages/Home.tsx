@@ -1,3 +1,7 @@
+// Home.tsx — the main landing screen after login. Shows a time-of-day greeting, the
+// big "get help" actions (mechanic, tow, breakdown, emergency, fuel, spare parts,
+// insurance), any active request, and quick links. The hub everything branches from.
+
 import { useNavigate } from 'react-router-dom';
 import { useRequests } from '@/contexts/RequestContext';
 import { useAuth } from '@/hooks/useAuth';

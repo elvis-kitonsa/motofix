@@ -1,3 +1,7 @@
+// DataTable.tsx — the reusable table used across the admin lists (requests, drivers,
+// payments...). You give it columns + data and it renders a paginated table, with loading
+// skeletons and optional row-click handling. Built on TanStack Table.
+
 import {
   ColumnDef,
   flexRender,

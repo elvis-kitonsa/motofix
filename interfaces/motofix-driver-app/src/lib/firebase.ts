@@ -1,3 +1,10 @@
+// lib/firebase.ts — sets up Firebase, which we use for push notifications (FCM).
+//
+// It only starts up if all the Firebase config values are present (they come from
+// environment variables), and only on browsers that actually support push. If
+// anything is missing or unsupported, the helpers return null instead of crashing —
+// so the app still runs fine without push notifications configured.
+
 import { initializeApp, getApps } from 'firebase/app'
 import { getMessaging, isSupported } from 'firebase/messaging'
 

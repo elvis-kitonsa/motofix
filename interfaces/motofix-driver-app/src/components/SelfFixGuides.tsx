@@ -1,3 +1,7 @@
+// SelfFixGuides.tsx — a browsable library of simple "fix it yourself" guides for common
+// faults, with steps and YouTube how-to links, plus a shortcut to ask MOTOBOT. Helps a
+// driver attempt a safe quick fix (e.g. changing a tyre) before requesting a mechanic.
+
 import { useState, useMemo } from 'react'
 import type { ElementType } from 'react'
 import { useNavigate } from 'react-router-dom'

@@ -1,3 +1,7 @@
+// DashboardLayout.tsx — the shared page shell every admin screen sits inside: the
+// Sidebar + TopBar around the page content. It also guards access — if the admin isn't
+// logged in it redirects to login — and handles the responsive (desktop vs mobile) layout.
+
 import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';

@@ -1,3 +1,7 @@
+// Dashboard.tsx — the main control-room overview screen. Pulls together the headline
+// stat cards, revenue chart, breakdown-hotspot map and analytics charts (each fed by the
+// useDashboardData hooks), with drill-down modals for each metric. The admin's home page.
+
 import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -49,6 +53,7 @@ export default function Dashboard() {
     totalRequests: 0, completedJobs: 0, pendingJobs: 0,
     totalMechanics: 0, verifiedMechanics: 0,
     revenueCollected: 0, paidToMechanics: 0, profit: 0,
+    commissionEarned: 0,
   };
 
   const completionRate = s.totalRequests > 0

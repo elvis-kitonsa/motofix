@@ -1,3 +1,6 @@
+// Security.tsx — the admin account-security screen: things like changing the password,
+// two-factor, and reviewing active sessions/sign-ins.
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';

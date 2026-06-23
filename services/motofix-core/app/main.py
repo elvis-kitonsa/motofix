@@ -1,5 +1,11 @@
 # motofix-core/app/main.py
-# Platform gateway service — health aggregation, service registry, shared config.
+#
+# The "core gateway" — a small central service that the other MOTOFIX services
+# and the admin dashboard talk to. It does three jobs:
+#   1. Keeps the master list of where every other service lives (the registry).
+#   2. Pings each service to check if it's alive (health checks).
+#   3. Hands out shared settings like subscription price and bank details (config).
+# It does NOT handle business logic itself — think of it as a switchboard/notice board.
 
 import asyncio
 import logging
@@ -110,6 +116,9 @@ app.add_middleware(
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def _require_token(authorization: str = Header(...)) -> dict:
+    # Checks the "Authorization: Bearer <token>" header on a request and makes sure
+    # the token is a valid, unexpired login token. Returns the token's contents if OK,
+    # or raises a 401 (unauthorized) error if it's missing, malformed, or invalid.
     try:
         scheme, token = authorization.split(" ", 1)
         if scheme.lower() != "bearer":
@@ -179,10 +188,13 @@ async def health_all():
             *[_probe_service(name, url, client) for name, url in SERVICES.items()]
         )
 
-    up    = [r for r in results if r["status"] == "up"]
-    down  = [r for r in results if r["status"] == "down"]
-    deg   = [r for r in results if r["status"] == "degraded"]
+    # Sort the results into three buckets so we can summarise them.
+    up    = [r for r in results if r["status"] == "up"]        # responding normally
+    down  = [r for r in results if r["status"] == "down"]      # unreachable
+    deg   = [r for r in results if r["status"] == "degraded"]  # replied, but not healthy
 
+    # Overall verdict: all good = "healthy"; some slow but none dead = "degraded";
+    # at least one service completely down = "critical".
     overall = "healthy" if not down and not deg else ("degraded" if not down else "critical")
 
     return {

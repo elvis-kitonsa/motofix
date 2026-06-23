@@ -1,6 +1,11 @@
+// MechanicAssignedCard.tsx — the card the driver sees once a mechanic takes the job.
+// Shows the mechanic's public profile (photo, rating, reviews, specialty) and quick
+// actions to call or chat. Falls back to a stock avatar when the mechanic hasn't
+// uploaded a photo.
+
 import { useState } from 'react'
 import { X, MessageCircle, Phone, Star, Wrench, Briefcase, Store, BadgeCheck, ChevronDown } from 'lucide-react'
-import type { MechanicPublicProfile } from '@/config/api'
+import type { MechanicPublicProfile, MechanicReview } from '@/config/api'
 
 const AUTH_BASE_URL = import.meta.env.VITE_API_AUTH_URL ?? ''
 
@@ -56,6 +61,7 @@ export default function MechanicAssignedCard({
   const rating      = profile.rating ?? 0
   const totalRatings = profile.total_ratings ?? 0
   const jobsDone    = profile.jobs_completed ?? 0
+  const reviews     = profile.reviews ?? []
 
   return (
     <>
@@ -89,17 +95,14 @@ export default function MechanicAssignedCard({
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)',
       }}>
 
-        {/* Thin green "assigned" accent line */}
-        <div style={{ height: 3, background: 'linear-gradient(90deg, transparent, #22C55E, transparent)' }} />
-
         {/* Drag handle + close */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '13px 20px 0', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 20px 0', position: 'relative' }}>
           <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border-3)' }} />
           <button
             onClick={onDismiss}
             aria-label="Dismiss"
             style={{
-              position: 'absolute', right: 16, width: 32, height: 32, borderRadius: '50%',
+              position: 'absolute', top: 18, right: 18, width: 32, height: 32, borderRadius: '50%',
               background: 'var(--surface-3)', border: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}
@@ -293,11 +296,73 @@ export default function MechanicAssignedCard({
                   <DetailRow icon={<Phone style={{ width: 13, height: 13, color: '#F59E0B' }} />} label="Phone" value={mechanicPhone} />
                 )}
               </div>
+
+              {/* Recent customer reviews */}
+              {reviews.length > 0 && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-2)' }}>
+                  <p style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12 }}>
+                    Recent Reviews
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {reviews.map((rev, i) => (
+                      <ReviewRow key={i} review={rev} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
     </>
+  )
+}
+
+// Short relative time, e.g. "2d ago", "3w ago", "just now".
+function relativeTime(iso: string | null): string {
+  if (!iso) return ''
+  const then = new Date(/[Z+]/.test(iso) ? iso : iso + 'Z').getTime()
+  if (isNaN(then)) return ''
+  const s = Math.max(0, (Date.now() - then) / 1000)
+  if (s < 60) return 'just now'
+  const m = s / 60; if (m < 60) return `${Math.floor(m)}m ago`
+  const h = m / 60; if (h < 24) return `${Math.floor(h)}h ago`
+  const d = h / 24; if (d < 7) return `${Math.floor(d)}d ago`
+  const w = d / 7; if (w < 5) return `${Math.floor(w)}w ago`
+  const mo = d / 30; if (mo < 12) return `${Math.floor(mo)}mo ago`
+  return `${Math.floor(d / 365)}y ago`
+}
+
+function ReviewRow({ review }: { review: MechanicReview }) {
+  const stars = Math.round(review.rating)
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+          {[1, 2, 3, 4, 5].map(n => (
+            <Star
+              key={n}
+              style={{
+                width: 12, height: 12,
+                fill: n <= stars ? '#F59E0B' : 'transparent',
+                color: n <= stars ? '#F59E0B' : 'var(--border-3)',
+              }}
+            />
+          ))}
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {review.reviewer_name}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0, marginLeft: 'auto' }}>
+          {relativeTime(review.created_at)}
+        </span>
+      </div>
+      {review.comment && (
+        <p style={{ fontSize: 12.5, color: 'var(--text-md)', lineHeight: 1.45, margin: 0 }}>
+          "{review.comment}"
+        </p>
+      )}
+    </div>
   )
 }
 

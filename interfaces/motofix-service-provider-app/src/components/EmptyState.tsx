@@ -1,3 +1,6 @@
+// EmptyState.tsx — a small reusable placeholder (icon + message) shown when a list has
+// nothing in it yet, e.g. "No jobs right now". Keeps empty screens from looking broken.
+
 import { C } from '@/styles/tokens'
 
 interface Props {

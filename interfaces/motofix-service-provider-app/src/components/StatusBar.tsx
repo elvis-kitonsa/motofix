@@ -1,3 +1,7 @@
+// StatusBar.tsx — the step-by-step progress strip for an active job (accepted → en route →
+// arrived → in progress → done), showing where the job currently is, plus quick call/message/
+// navigate actions.
+
 import { CheckCircle2, Circle, Phone, MessageCircle, Navigation2 } from 'lucide-react'
 import { C } from '@/styles/tokens'
 

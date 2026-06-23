@@ -1,3 +1,7 @@
+// LocatingUser.tsx — the brief "finding your location" screen shown while we get a GPS
+// fix (with friendly status messages), before moving the driver on to describe the issue.
+// Falls back to central Kampala if GPS can't be obtained.
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Navigation } from 'lucide-react';

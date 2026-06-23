@@ -1,8 +1,35 @@
+// DescribeIssue.tsx — the screen where the driver describes what's wrong before sending
+// a request. They can type it, get a MOTOBOT cost estimate (repair vs replace) and an
+// optional photo verdict, then submit. Admin-set catalog prices override the AI estimate
+// (see withCatalogOverride below). Leads into dispatching a mechanic.
+
 import { useState, useLayoutEffect, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, MapPin, Send, Sparkles } from 'lucide-react'
-import { requestsService, diagnosisService, type DiagnosisResult } from '@/config/api'
+import { requestsService, diagnosisService, partsService, type DiagnosisResult } from '@/config/api'
 import { useAuth } from '@/hooks/useAuth'
+
+/* ── Admin catalog override ───────────────────────────────────────────────────
+   The prices an admin sets in the Spare Parts → Price Catalog are authoritative:
+   if an entry exists for this fault category, its parts + service-fee range REPLACE
+   the AI's estimate before the driver sees it (same rule as PartsNeeded.tsx). ── */
+async function withCatalogOverride(est: DiagnosisResult | null): Promise<DiagnosisResult | null> {
+  if (!est?.fault_category) return est
+  try {
+    const { data: cat } = await partsService.getCatalog(est.fault_category)
+    if (cat && (cat.parts?.length || cat.service_fee_min != null || cat.service_fee_max != null)) {
+      return {
+        ...est,
+        required_parts: cat.parts?.length
+          ? cat.parts.map(p => ({ name: p.name, price_min: p.price_min, price_max: p.price_max }))
+          : est.required_parts,
+        service_fee_min: cat.service_fee_min ?? est.service_fee_min,
+        service_fee_max: cat.service_fee_max ?? est.service_fee_max,
+      }
+    }
+  } catch { /* 404 → no admin override, keep the AI estimate */ }
+  return est
+}
 
 /* ── Photo helpers — used to persist the uploaded photo across an iOS tab
    reload (sessionStorage can't hold a File, so we keep a compressed data URL)
@@ -331,7 +358,7 @@ export default function DescribeIssue() {
       || `${ISSUE_LABELS[issueType ?? ''] ?? 'Vehicle issue'} — ${ISSUE_DEFAULTS[issueType ?? ''] ?? 'needs roadside assistance'}`
     setEstimateLoading(true)
     diagnosisService.diagnoseText(seed)
-      .then(r => { if (!cancelled) setEstimate(r.data) })
+      .then(async r => { const merged = await withCatalogOverride(r.data); if (!cancelled) setEstimate(merged) })
       .catch(() => { if (!cancelled) setEstimate(null) })
       .finally(() => { if (!cancelled) setEstimateLoading(false) })
     return () => { cancelled = true }
@@ -362,8 +389,9 @@ export default function DescribeIssue() {
         setBetterPhotoHint('')
         try { sessionStorage.removeItem(PHOTO_KEY) } catch { /* ignore */ }
       } else {
+        const merged = (await withCatalogOverride(r.data)) ?? r.data  // admin prices win
         setPhotoMismatch('')  // clear any prior mismatch — this photo is on-topic
-        setEstimate(r.data)
+        setEstimate(merged)
         setPhotoChecked(true)
         setPhotoFile(file)
         setSamePhoto(isSame)  // still analysed; we just tell the driver it's a repeat
@@ -372,7 +400,7 @@ export default function DescribeIssue() {
         // Persist the photo + its analysis so an iOS tab reload can restore them.
         try {
           const dataUrl = await fileToCompressedDataUrl(file)
-          sessionStorage.setItem(PHOTO_KEY, JSON.stringify({ dataUrl, estimate: r.data, hash: lastPhotoHashRef.current }))
+          sessionStorage.setItem(PHOTO_KEY, JSON.stringify({ dataUrl, estimate: merged, hash: lastPhotoHashRef.current }))
         } catch { /* quota / canvas issue — skip persistence, analysis still shows */ }
       }
     } catch {
@@ -784,7 +812,10 @@ export default function DescribeIssue() {
             )
             return (
               <>
-                {hasRepair && (
+                {/* When MOTOBOT made a decisive call from a clear photo, show ONLY the
+                    recommended option. Show both ranges only when it's undecided (inspect)
+                    or no photo was checked. */}
+                {hasRepair && !recReplace && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(34,197,94,0.10)', border: recRepair ? '1.5px solid #16A34A' : '1px solid rgba(34,197,94,0.3)', boxShadow: recRepair ? '0 0 0 3px rgba(34,197,94,0.15)' : 'none', marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: '#16A34A' }}>{recRepair ? 'Repairable — no new part needed' : 'If it can be repaired'}</div>
@@ -796,7 +827,7 @@ export default function DescribeIssue() {
                     </div>
                   </div>
                 )}
-                {hasReplace && (
+                {hasReplace && !recRepair && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.10)', border: recReplace ? `1.5px solid ${AMBER}` : `1px solid ${AMBER}40`, boxShadow: recReplace ? `0 0 0 3px ${AMBER}26` : 'none' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: AMBRD }}>{recReplace ? 'A new part is needed' : 'If a new part is needed'}</div>

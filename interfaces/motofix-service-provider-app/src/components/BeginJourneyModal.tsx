@@ -1,3 +1,6 @@
+// BeginJourneyModal.tsx — the popup the mechanic confirms when starting their trip to a
+// job. Once confirmed, the job moves to "en route" and the live tracking/journey begins.
+
 import { useState } from 'react'
 import { Loader2, ChevronDown, X, MapPin, Wrench, CheckCircle2 } from 'lucide-react'
 import { C } from '@/styles/tokens'

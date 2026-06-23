@@ -1,3 +1,6 @@
+// ActivityLog.tsx — the audit trail screen: a chronological log of what's happened on the
+// platform (logins, approvals, changes), so admins can see who did what and when.
+
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';

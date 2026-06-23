@@ -1,3 +1,8 @@
+// PrivateRoute.tsx — wraps any page that requires login.
+// While we're still checking the session it shows a loading spinner; if the user
+// isn't logged in it redirects them to /login (remembering where they were headed);
+// otherwise it shows the page. Used throughout App.tsx around protected routes.
+
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';

@@ -113,8 +113,15 @@ services:
       AIRTEL_CLIENT_ID: ${AIRTEL_CLIENT_ID:-}
       AIRTEL_CLIENT_SECRET: ${AIRTEL_CLIENT_SECRET:-}
       AIRTEL_MERCHANT_PIN: ${AIRTEL_MERCHANT_PIN:-}
+      # Where locally-stored media is written + the absolute base URL used in its
+      # links. Set DISPATCH_PUBLIC_URL to the LAN host phones reach (e.g.
+      # http://192.168.1.3:8001) so driver photos load on the mechanic's phone.
+      MEDIA_DIR: /app/media
+      DISPATCH_PUBLIC_URL: ${DISPATCH_PUBLIC_URL:-http://localhost:8001}
     ports:
       - "8001:8001"
+    volumes:
+      - dispatch_media:/app/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -314,3 +321,4 @@ services:
 volumes:
   postgres_data:
   auth_uploads:
+  dispatch_media:

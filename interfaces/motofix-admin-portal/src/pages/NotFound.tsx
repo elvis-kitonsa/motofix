@@ -1,3 +1,6 @@
+// NotFound.tsx — the 404 page for unknown admin URLs (the catch-all "*" route in App.tsx).
+// Logs the bad path and offers a link back to the dashboard.
+
 import { useLocation, Link } from "react-router-dom";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";

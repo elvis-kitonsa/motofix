@@ -1,3 +1,17 @@
+# payments/app/main.py — Payments & Billing Service
+#
+# A standalone service dedicated to money: it handles the payment side of a job from
+# quote to payout. The flow it supports:
+#   1. /payments/quote   — the mechanic proposes a price for the job.
+#   2. /payments/approve — the driver accepts that price.
+#   3. /payments/collect — charge the driver via Mobile Money (MTN/Airtel).
+#   4. /payments/disburse— pay the mechanic their share.
+#   5. /payments/callback— the mobile-money network tells us a payment succeeded/failed.
+# Plus read endpoints: /status, /earnings (per mechanic) and /transactions (for admin).
+#
+# NOTE: the main dispatch service (../../app/main.py) also contains payment endpoints;
+# this dedicated service is the cleaner, self-contained version of that billing logic.
+
 import os
 import uuid
 import base64

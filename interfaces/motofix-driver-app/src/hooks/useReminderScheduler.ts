@@ -1,3 +1,9 @@
+// useReminderScheduler.ts — quietly checks whether any maintenance reminders are due
+// and pops a gentle nudge when one is. It reads the user's reminder settings and which
+// checklist items are still outstanding (from lib/reminders), respecting each item's
+// cadence (daily/weekly/monthly) and not nagging about the same thing twice. App.tsx
+// only enables it when it's safe to interrupt (logged in, not mid-job, not on a login screen).
+
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import {

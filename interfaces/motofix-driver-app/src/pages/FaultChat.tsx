@@ -1,3 +1,8 @@
+// FaultChat.tsx — the full MOTOBOT chat screen (opened from the floating robot button
+// or "Not sure? Let AI diagnose"). The driver chats by text, voice note, or photo and
+// MOTOBOT helps work out the fault; once it has enough it produces a diagnosis the
+// driver can act on. This is the car-only AI assistant; chat history is kept on-device.
+
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {

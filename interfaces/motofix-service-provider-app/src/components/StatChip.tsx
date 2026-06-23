@@ -1,3 +1,6 @@
+// StatChip.tsx — a small labelled stat pill (e.g. rating, jobs done, earnings) used on the
+// dashboard/profile. Tapping one can open StatExplainerModal to explain what the number means.
+
 import { C } from '@/styles/tokens'
 
 interface Props {

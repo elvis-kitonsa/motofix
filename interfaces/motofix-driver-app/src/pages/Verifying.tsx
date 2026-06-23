@@ -1,3 +1,7 @@
+// Verifying.tsx — the short "verifying your account" transition shown right after login/
+// signup while we confirm the session and decide where to send the user next (onboarding
+// if their profile isn't complete, otherwise straight to Home).
+
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';

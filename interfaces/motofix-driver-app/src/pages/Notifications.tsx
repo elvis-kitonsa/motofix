@@ -1,3 +1,7 @@
+// Notifications.tsx — the notifications inbox screen: lists the alerts collected in
+// lib/notifications (job updates, reminders, system messages), newest first, with
+// mark-read / clear actions. Separate from the maintenance checklist (Reminders).
+
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Bell, Wrench, Trash2, CheckCheck, Settings, CheckCircle2, Car, CreditCard } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';

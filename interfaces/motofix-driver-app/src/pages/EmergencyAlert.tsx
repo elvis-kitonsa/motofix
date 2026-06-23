@@ -1,3 +1,7 @@
+// EmergencyAlert.tsx — the urgent-help screen for a real emergency (accident/injuries).
+// Surfaces Uganda emergency phone numbers, one-tap call, and quick ways to share the
+// driver's location, so help (incl. an ambulance) can be reached fast.
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {

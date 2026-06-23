@@ -1,3 +1,6 @@
+// WelcomeSplash.tsx — the welcome screen ("/welcome") shown to a provider before they
+// continue to log in or apply; reads auth state so it can route an already-logged-in provider straight on.
+
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'

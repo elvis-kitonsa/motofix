@@ -1,3 +1,7 @@
+// NearbyMechanics.tsx — shows the verified mechanics near the driver on a map (from the
+// matching service), so they can see who's available, how close and how well rated, and
+// pick one. Part of the request flow when finding help.
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GoogleMap, useLoadScript, Marker, Circle, Polyline, DirectionsRenderer } from '@react-google-maps/api';

@@ -1,3 +1,8 @@
+// LocationPicker.tsx — a Google Map the driver uses to set exactly where they are.
+// They can drag the pin or use "find my location"; it then reverse-geocodes the spot
+// to a readable address and reports lat/lng + address back via onLocationChange.
+// Defaults to central Kampala until a real position is chosen.
+
 import { useState, useCallback, useRef } from 'react';
 import { MapPin, Crosshair, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useLoadScript, GoogleMap, Marker } from '@react-google-maps/api';

@@ -1,3 +1,7 @@
+// Apply.tsx — the multi-step application form for someone wanting to join as a mechanic or
+// tow provider: their details, provider type, specialisations and document uploads. Submitted
+// for an admin to review (see the admin portal's Applications screens).
+
 import { useState, useLayoutEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {

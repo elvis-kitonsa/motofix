@@ -1,4 +1,26 @@
-# app/main.py
+# app/main.py — Request & Dispatch Service (the busiest service in MOTOFIX)
+#
+# This is the engine room. When a driver asks for help, this service handles the
+# whole journey of that request and almost everything attached to it. It's large,
+# so use the section dividers (lines like "──── SECTION ────") to jump around.
+#
+# WHAT IT DOES, by section (top → bottom):
+#   • Startup            — run_migrations / lifespan: create DB tables, start the
+#                          background "watchdog", connect to Postgres with retries.
+#   • Geocoding          — turn GPS coordinates into a human address (Google proxy).
+#   • Health checks      — simple "is this service alive?" endpoints.
+#   • Auth & feature flags— read the logged-in user from their token; on/off switches.
+#   • Models             — the shapes of request data in/out (RequestCreate, RequestOut).
+#   • Real-time (WebSocket)— push live updates to driver/mechanic apps (ConnectionManager).
+#   • Request endpoints  — create a request, attach photos/voice, list, accept, reject,
+#                          re-dispatch to the next mechanic, update status through the job.
+#   • Strikes & fees     — penalise mechanics who cancel; track the platform fee MOTOFIX
+#                          earns per job (this replaced the old monthly subscription).
+#   • Stats & revenue    — numbers for the admin dashboard.
+#   • Payments           — Mobile Money via MTN MoMo and Airtel Money, plus cash jobs.
+#
+# Data is stored in Postgres via raw SQL (asyncpg) — there's no ORM here, so you'll
+# see SQL strings directly in the endpoints. `get_db` hands each request a connection.
 
 import os
 import json
@@ -128,6 +150,25 @@ async def run_migrations(db_pool: asyncpg.Pool):
             """)
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_platform_fees_mech ON platform_fees (mechanic_id, status)")
             logger.info("✅ platform_fees ledger ensured")
+
+            # One-time cleanup so no mechanic owes more than the 3-job cap. Older test
+            # runs let the unpaid balance climb past 3 (e.g. a mechanic showing 7 owed);
+            # here we keep each mechanic's 3 OLDEST unpaid fees and mark the rest 'waived'
+            # (kept for audit, not deleted). Harmless to re-run: once everyone is within
+            # the cap this updates nothing. Going forward, _accrue_platform_fee never lets
+            # the count exceed 3 in the first place.
+            capped = await conn.execute("""
+                WITH ranked AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (PARTITION BY mechanic_id
+                                              ORDER BY created_at ASC, id ASC) AS rn
+                    FROM platform_fees
+                    WHERE status = 'owed'
+                )
+                UPDATE platform_fees SET status = 'waived'
+                WHERE id IN (SELECT id FROM ranked WHERE rn > 3)
+            """)
+            logger.info("✅ platform_fees capped to 3 unpaid per mechanic (%s)", capped)
 
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS job_acceptances (
@@ -293,6 +334,29 @@ async def run_migrations(db_pool: asyncpg.Pool):
             """)
             logger.info("✅ spare_parts_dealers table ensured")
 
+            # Seed a simulated dealer directory the first time so the driver and
+            # mechanic apps always have real businesses to show. Idempotent — only
+            # runs while the table is empty; admins can then add/edit their own.
+            dealer_count = await conn.fetchval("SELECT COUNT(*) FROM spare_parts_dealers")
+            if not dealer_count:
+                seed_dealers = [
+                    ("Kisekka Market Auto Spares", "+256 700 100 201", "Kisekka Market, Central, Kampala", "Kisekka Market", 0.3136, 32.5736, "Engine, electrical & filters", "Genuine & OEM parts for most makes. Same-day delivery within Kampala."),
+                    ("Ndeeba Spare Parts Centre",  "+256 700 100 202", "Ndeeba, off Masaka Rd, Kampala", "Ndeeba",        0.2906, 32.5606, "Body panels & suspension",    "Body, suspension and steering specialists."),
+                    ("Nakawa Motor Spares",        "+256 700 100 203", "Nakawa Motor Village, Kampala", "Nakawa",         0.3289, 32.6186, "Tyres, batteries & belts",    "Open 24 hours. Tyres, batteries, belts and fast-moving parts."),
+                    ("Bwaise Auto Parts & Tools",  "+256 700 100 204", "Bwaise, Bombo Rd, Kampala",     "Bwaise",         0.3556, 32.5644, "Tools & general spares",      "Workshop tools and general spares at fair prices."),
+                    ("Kireka Car Accessories",     "+256 700 100 205", "Kireka, Jinja Rd, Kampala",     "Kireka",         0.3494, 32.6519, "Accessories & lighting",      "Car accessories, lighting and in-car electronics."),
+                    ("Lubowa Genuine Parts",       "+256 700 100 206", "Lubowa, Entebbe Rd, Wakiso",    "Lubowa",         0.2353, 32.5419, "Genuine OEM parts",           "Dealer-grade genuine parts with warranty."),
+                    ("Ntinda Auto Spares",         "+256 700 100 207", "Ntinda Stretcher Rd, Kampala",  "Ntinda",         0.3553, 32.6119, "Filters, fluids & service parts", "Service parts, filters and fluids for routine maintenance."),
+                    ("Industrial Area Parts Hub",  "+256 700 100 208", "7th Street, Industrial Area, Kampala", "Industrial Area", 0.3119, 32.6019, "Engine & transmission", "Engines, gearboxes and reconditioned units (half-cuts)."),
+                ]
+                await conn.executemany(
+                    """INSERT INTO spare_parts_dealers
+                         (name, phone, address, location, latitude, longitude, specialty, description, verified)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)""",
+                    seed_dealers,
+                )
+                logger.info("✅ Seeded %d simulated spare-parts dealers", len(seed_dealers))
+
             # NOTE: Avoid destructive schema changes by default.
             # Dropping legacy tables can break another deployment that still needs the data.
             if os.getenv("ALLOW_DESTRUCTIVE_MIGRATIONS", "false").lower() in ("1", "true", "yes"):
@@ -309,6 +373,8 @@ async def _completion_watchdog():
        • awaiting_confirmation for >30 min → auto-complete
        • service_started untouched for >6 h → start the completion handshake
     """
+    # Runs forever in the background. Every 60 seconds it wakes up, checks the
+    # database for "stuck" jobs, nudges them along, and goes back to sleep.
     while True:
         try:
             await asyncio.sleep(60)
@@ -419,6 +485,15 @@ app = FastAPI(
     description="Core API for creating and managing breakdown service requests with media support",
     lifespan=lifespan
 )
+
+# Serve locally-stored media (the LocalStorage fallback writes here). Mounted early
+# so it isn't shadowed by the catch-all "/" frontend mount registered at the end.
+_MEDIA_DIR = os.getenv("MEDIA_DIR", "/app/media")
+try:
+    os.makedirs(_MEDIA_DIR, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=_MEDIA_DIR), name="media")
+except Exception as _e:  # pragma: no cover
+    logging.getLogger(__name__).warning("Could not mount /media: %s", _e)
 
 # ════════════════════════════════ CORS ════════════════════════════════
 from fastapi.middleware.cors import CORSMiddleware
@@ -657,15 +732,28 @@ async def get_current_user(request: Request, db=Depends(get_db)) -> Dict:
         # Phone may be baked into the JWT claim (preferred) or looked up from the DB
         jwt_phone: str | None = payload.get("phone")
 
-        if user_role == "mechanic":
-            try:
-                mech_row = await db.fetchrow(
-                    "SELECT id, phone FROM mechanics WHERE id = $1", int(user_id)
-                )
-                if mech_row:
-                    return {"id": mech_row["id"], "role": "mechanic", "phone": mech_row["phone"]}
-            except Exception as e:
-                logger.warning(f"⚠️ Could not fetch from mechanics table: {e}")
+        # Service providers — mechanics, tow providers, and "both" — all handle a job the
+        # SAME way here, so dispatch treats them as one job-handling party (role normalised
+        # to "mechanic" internally). This is the single change that unblocks tow providers:
+        # every job endpoint below checks role == "mechanic", so without this a tow provider
+        # gets "Only mechanics can accept jobs".
+        # IMPORTANT: this does NOT let a tow provider grab a repair job. WHICH provider is
+        # offered WHICH job (a tow provider never receives a pure repair) is decided by the
+        # matching service from each provider's capabilities — not from this role claim.
+        if user_role in ("mechanic", "towing_provider", "both"):
+            # Only real mechanics live in the mechanics table — enrich the phone from it when
+            # we can. Tow providers are in a separate table, so for them (and as a fallback)
+            # we trust the JWT phone, and never look up by id across tables (ids overlap and
+            # would resolve to the wrong person).
+            if user_role == "mechanic":
+                try:
+                    mech_row = await db.fetchrow(
+                        "SELECT id, phone FROM mechanics WHERE id = $1", int(user_id)
+                    )
+                    if mech_row:
+                        return {"id": mech_row["id"], "role": "mechanic", "phone": mech_row["phone"]}
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not fetch from mechanics table: {e}")
             return {"id": int(user_id), "role": "mechanic", "phone": jwt_phone}
         else:
             # Use JWT phone if present — avoids dependency on a users table in this DB
@@ -692,6 +780,19 @@ class MediaFile(BaseModel):
     size_kb: float
     uploaded_at: str
 
+
+def _media_rows_to_list(rows) -> list:
+    """Normalise DB media rows for the API: coerce the datetime uploaded_at to an
+    ISO string so it validates against MediaFile.uploaded_at (str)."""
+    out = []
+    for m in rows or []:
+        d = dict(m)
+        ua = d.get("uploaded_at")
+        if ua is not None and not isinstance(ua, str):
+            d["uploaded_at"] = ua.isoformat()
+        out.append(d)
+    return out
+
 class RequestCreate(BaseModel):
     customer_name: str = ""
     service_type: str = "Other"
@@ -717,6 +818,13 @@ class RequestOut(BaseModel):
     arrived_at: Optional[str] = None
     service_started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    # The mechanic's final charge + what-was-fixed note, set when they mark the job
+    # done. Surfaced so the driver can review the agreed figure before confirming,
+    # and so it shows in the request details across all three apps.
+    eta_minutes: Optional[int] = None
+    completion_by: Optional[str] = None
+    actual_fee: Optional[int] = None
+    service_note: Optional[str] = None
 
 class CallPartnerResponse(BaseModel):
     phone: str  # Only returned from secure /call-partner endpoint
@@ -728,7 +836,14 @@ from datetime import timedelta
 from typing import Dict, Any
 
 class ConnectionManager:
-    """Simple WebSocket connection manager for broadcasting events to all connected clients."""
+    """Simple WebSocket connection manager for broadcasting events to all connected clients.
+
+    A WebSocket is an open, two-way phone line between the server and an app (unlike a
+    normal request that hangs up after one reply). We keep a list of every connected
+    app here; when something happens (a job is taken, the mechanic moves on the map,
+    a chat message is sent), broadcast() pushes it to all of them instantly so screens
+    update live without the apps having to keep asking "anything new?".
+    """
     def __init__(self):
         self.active_connections: List[WebSocket] = []
 
@@ -1274,7 +1389,7 @@ async def get_requests(
                     ORDER BY uploaded_at DESC
                 """
                 media_rows = await db.fetch(media_query, row["id"])
-                request_data["media_files"] = [dict(m) for m in media_rows] if media_rows else []
+                request_data["media_files"] = _media_rows_to_list(media_rows)
             except Exception as me:
                 logger.warning(f"Could not fetch media for request {row.get('id')}: {me}")
             
@@ -1317,7 +1432,7 @@ async def get_pending_requests(current_user: Dict = Depends(get_current_user), d
                 "SELECT file_url as url, file_type, size_kb, uploaded_at FROM media_files WHERE request_id = $1 ORDER BY uploaded_at DESC",
                 row["id"],
             )
-            data["media_files"] = [dict(m) for m in media_rows] if media_rows else []
+            data["media_files"] = _media_rows_to_list(media_rows)
             results.append(data)
         return results
     except Exception as e:
@@ -1369,8 +1484,8 @@ async def get_request(request_id: int, current_user: Dict = Depends(get_current_
         ORDER BY uploaded_at DESC
     """
     media_rows = await db.fetch(media_query, request_id)
-    request_data['media_files'] = [dict(m) for m in media_rows] if media_rows else []
-    
+    request_data['media_files'] = _media_rows_to_list(media_rows)
+
     return request_data
 
 
@@ -1530,8 +1645,11 @@ async def accept_request(
     await ensure_acceptances_table(db)
 
     try:
+        # Any verified service provider (mechanic, tow provider, or "both") may accept —
+        # get_current_user normalises every provider role to "mechanic". Only drivers/admins
+        # fall through to this guard.
         if (current_user.get("role") or "").lower() != "mechanic":
-            raise HTTPException(status_code=403, detail="Only mechanics can accept jobs")
+            raise HTTPException(status_code=403, detail="Only service providers can accept jobs")
 
         mechanic_id = int(current_user.get("id"))
         mechanic_name = current_user.get("name") or current_user.get("full_name") or "Mechanic"
@@ -1841,11 +1959,27 @@ FEE_DEFAULT_HOURS = 48     # hours an over-cap balance may sit before the accoun
 # NOT block or lock a mechanic for non-payment yet. Enforcing an access block on an informal,
 # trust-first market is heavy-handed for a demo, so it's deliberately left for production —
 # flip this to True there to re-arm the accept gate + hard-lock computed in `_fee_state`.
-FEE_ENFORCE_GATE  = False
+FEE_ENFORCE_GATE  = True
 
 async def _accrue_platform_fee(db, mechanic_id: int, request_id: int) -> None:
-    """A completed job → the mechanic owes a flat platform fee. request_id is UNIQUE
-    so re-running the completion path never double-charges the same job."""
+    """A completed job → the mechanic owes a flat platform fee — UNLESS they are already
+    at the cap. We hard-cap the unpaid balance at FEE_GATE_JOBS (3): once a mechanic owes
+    3 unpaid fees they are gated from accepting new work, so any further completed job is
+    waived rather than stacked on. This guarantees the owed balance never climbs past
+    3 jobs (UGX 30,000) — the mechanic settles, then starts accruing again.
+    request_id is UNIQUE so re-running the completion path never double-charges the same job."""
+    # How many unpaid fees does this mechanic already have? (Skip this job's own row so a
+    # harmless re-run of an already-recorded fee isn't mistaken for being over the cap.)
+    owed_now = await db.fetchval(
+        """SELECT COUNT(*) FROM platform_fees
+           WHERE mechanic_id = $1 AND status = 'owed' AND request_id <> $2""",
+        mechanic_id, request_id,
+    )
+    if owed_now is not None and owed_now >= FEE_GATE_JOBS:
+        # Already at the 3-job cap — waive this fee instead of exceeding it.
+        logger.info("Platform fee waived for job %s — mechanic %s already at the %s-job cap",
+                    request_id, mechanic_id, FEE_GATE_JOBS)
+        return
     await db.execute(
         """
         INSERT INTO platform_fees (request_id, mechanic_id, amount, status)
@@ -1926,24 +2060,25 @@ def _parse_momo_amount(text: Optional[str]) -> Optional[int]:
             pass
     return max(vals) if vals else None
 
-async def _settle_fees(db, mechanic_id: int, amount: int, ref: Optional[str]) -> int:
-    """Apply a received payment to the oldest owed fees first. Returns jobs cleared."""
+async def _settle_fees(db, mechanic_id: int, amount: int, ref: Optional[str]) -> list[int]:
+    """Apply a received payment to the oldest owed fees first. Returns the request_ids
+    of the jobs cleared (so the admin notification can list which jobs were settled)."""
     rows = await db.fetch(
-        "SELECT id, amount FROM platform_fees WHERE mechanic_id=$1 AND status='owed' ORDER BY created_at ASC",
+        "SELECT id, request_id, amount FROM platform_fees WHERE mechanic_id=$1 AND status='owed' ORDER BY created_at ASC",
         mechanic_id,
     )
-    cleared, remaining = [], amount
+    cleared_ids, cleared_reqs, remaining = [], [], amount
     for r in rows:
         if remaining >= int(r["amount"]):
-            cleared.append(r["id"]); remaining -= int(r["amount"])
+            cleared_ids.append(r["id"]); cleared_reqs.append(int(r["request_id"])); remaining -= int(r["amount"])
         else:
             break
-    if cleared:
+    if cleared_ids:
         await db.execute(
             "UPDATE platform_fees SET status='paid', paid_at=NOW(), payment_ref=$2 WHERE id = ANY($1::int[])",
-            cleared, ref,
+            cleared_ids, ref,
         )
-    return len(cleared)
+    return cleared_reqs
 
 class FeePaymentPayload(BaseModel):
     sms_text: Optional[str] = None   # simulated/real MoMo confirmation message (AI-parsed)
@@ -1965,20 +2100,29 @@ async def pay_platform_fees(mechanic_id: int, body: FeePaymentPayload, db=Depend
         raise HTTPException(status_code=400, detail="Could not detect a payment amount.")
     cleared = await _settle_fees(db, mechanic_id, int(amount), body.reference)
     state = await _fee_state(db, mechanic_id)
-    # Notify admins in real time that a platform-fee payment landed.
+    # Notify admins in real time that a platform-fee payment landed. (The admin portal
+    # also surfaces this via the polled notification feed — see analytics admin_notifications,
+    # which reads the paid platform_fees rows — so it shows even if the WS is missed.)
     try:
         await manager.broadcast({
             "type": "platform_fee_paid",
             "mechanic_id": mechanic_id,
             "amount": int(amount),
-            "cleared_jobs": cleared,
+            "cleared_jobs": len(cleared),
+            "cleared_job_ids": cleared,
             "owed_remaining": state["owed_amount"],
             "detected_by": "ai_sms" if body.amount is None else "manual",
             "at": datetime.utcnow().isoformat() + "Z",
         })
     except Exception as e:
         logger.warning("fee-paid broadcast failed: %s", e)
-    return {"detail": "Payment applied", "cleared_jobs": cleared, "amount": int(amount), "state": state}
+    return {
+        "detail": "Payment applied",
+        "cleared_jobs": len(cleared),
+        "cleared_job_ids": cleared,
+        "amount": int(amount),
+        "state": state,
+    }
 
 @app.get("/mechanics/{mechanic_id}/strikes", tags=["Cancellation"])
 async def get_mechanic_strikes(mechanic_id: int, db=Depends(get_db)):

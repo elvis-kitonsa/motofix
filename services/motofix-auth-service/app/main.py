@@ -1,4 +1,18 @@
-# motofix-auth-service/app/main.py
+# motofix-auth-service/app/main.py — Authentication Service (entry point)
+#
+# This service owns WHO everyone is and whether they're allowed in: drivers,
+# mechanics/tow providers, and admins all register and log in here. It also holds
+# provider applications, the admin-managed spare-parts catalog, and parts orders.
+#
+# This file just starts the service: it opens the database connection pool, makes
+# sure the tables exist, sets up CORS (which web addresses may call us), and plugs
+# in the routers below. The actual endpoints live in those router files:
+#   routers/driver.py   — driver sign-up + OTP login
+#   routers/provider.py — mechanic / tow-provider sign-up + login
+#   routers/admin.py    — admin login + verifying providers
+#   routers/users.py    — shared user lookups/updates
+#   routers/applications.py — provider applications (submit / review / approve)
+#   routers/parts_catalog.py, parts_orders.py — spare-parts catalog + driver orders
 
 import os
 import logging
@@ -428,6 +442,40 @@ async def get_provider_public_profile(mechanic_id: int, request: Request):
         )
     if not row:
         raise HTTPException(status_code=404, detail="Provider not found")
+
+    # Recent customer reviews (rating + comment) live in the DISPATCH DB. Pull the
+    # latest few so drivers can read real feedback before the mechanic arrives.
+    # Reviewer names are shortened to "First L." for privacy.
+    reviews = []
+    try:
+        from .routers.provider import _get_dispatch_pool
+        dpool = await _get_dispatch_pool()
+        if dpool:
+            async with dpool.acquire() as dconn:
+                rrows = await dconn.fetch(
+                    """SELECT r.rating, r.comment, r.created_at,
+                              sr.customer_name, sr.service_type
+                       FROM reviews r
+                       LEFT JOIN service_requests sr ON r.request_id = sr.id
+                       WHERE r.mechanic_id = $1
+                       ORDER BY r.created_at DESC
+                       LIMIT 8""",
+                    mechanic_id,
+                )
+                for r in rrows:
+                    name = (r["customer_name"] or "").strip()
+                    parts = [p for p in name.split() if p]
+                    display = (parts[0] + (f" {parts[-1][0]}." if len(parts) > 1 else "")) if parts else "A driver"
+                    reviews.append({
+                        "rating":       r["rating"] or 0,
+                        "comment":      (r["comment"] or "").strip(),
+                        "created_at":   r["created_at"].isoformat() if r["created_at"] else None,
+                        "reviewer_name": display,
+                        "service_type": r["service_type"],
+                    })
+    except Exception as exc:
+        logger.warning("Could not load reviews for provider %s: %s", mechanic_id, exc)
+
     return {
         "id":               row["id"],
         "full_name":        row["full_name"],
@@ -438,6 +486,7 @@ async def get_provider_public_profile(mechanic_id: int, request: Request):
         "jobs_completed":   row["jobs_completed"],
         "profile_photo_url": row["profile_photo_url"],
         "garage_name":      row["garage_name"],
+        "reviews":          reviews,
     }
 
 

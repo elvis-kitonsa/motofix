@@ -1,3 +1,7 @@
+// ProtectedRoute.tsx — wraps any page that requires login. If the mechanic isn't
+// authenticated it redirects to /login (remembering where they were going); otherwise it
+// renders the page. Used throughout App.tsx.
+
 import { Navigate, useLocation } from 'react-router-dom'
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {

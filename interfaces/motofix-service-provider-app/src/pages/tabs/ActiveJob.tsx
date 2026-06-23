@@ -1,4 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+// tabs/ActiveJob.tsx — the focused screen for the job the mechanic is currently doing: live
+// map + route to the customer, the status steps (en route → arrived → in progress → complete),
+// call/message actions, the diagnostic tool, and recording the charge + what was fixed at the end.
+
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Navigation2, Phone, MessageCircle, MapPin, Maximize2, Minimize2, Stethoscope, ChevronLeft, Wrench, Smartphone, Clock, User, Star, Ban, Check, Sparkles, Wallet, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,6 +18,7 @@ import { useLocation } from '@/hooks/useLocation'
 import StatusBar from '@/components/StatusBar'
 import EmptyState from '@/components/EmptyState'
 import DiagnosticTool from '@/components/DiagnosticTool'
+import TrackingMap from '@/components/TrackingMap'
 import { formatUGX } from '@/utils/formatters'
 import type { ServiceRequest } from '@/types'
 
@@ -249,6 +254,19 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
     return () => clearTimeout(t)
   }, [isLoaded])
 
+  // Marker icons — built ONCE per maps-load. Recreating the icon object on every
+  // render (the map re-renders several times a second) made iOS Safari silently
+  // drop the driver Marker; a stable icon reference keeps all pins on the map.
+  const mapIcons = useMemo(() => {
+    const g = (window as any).google?.maps
+    if (!isLoaded || !g) return null
+    return {
+      driver:   { url: DRIVER_PIN_SVG,   scaledSize: new g.Size(44, 56), anchor: new g.Point(22, 53) } as google.maps.Icon,
+      provider: { url: MECHANIC_CAR_SVG, scaledSize: new g.Size(43, 53), anchor: new g.Point(21.5, 50.5) } as google.maps.Icon,
+      garage:   { url: GARAGE_PIN_SVG,   scaledSize: new g.Size(40, 49), anchor: new g.Point(20, 48) } as google.maps.Icon,
+    }
+  }, [isLoaded])
+
   // Mechanic-initiated cancellation (with reason + suspension warning).
   const [cancelOpen, setCancelOpen] = useState(false)
   const handleCancelled = useCallback((outcome: { strikes: number; suspended: boolean; limit: number; suspension_count?: number } | null) => {
@@ -403,10 +421,26 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
   // Keyed off the STABLE request location (not the live-GPS driverPos, which the
   // driver may broadcast) so both apps compute exactly the same route.
   const enRoute = activeRequest?.status === 'en_route'
-  const reqDriver: LL | null =
-    activeRequest?.location_lat != null && activeRequest?.location_lng != null
-      ? { lat: activeRequest.location_lat, lng: activeRequest.location_lng }
-      : driverPos
+  // The driver's STABLE pinned location. normalizeRequest() already parses the
+  // request's "lat,lng" string into location_lat/location_lng, so use those — they
+  // never go null (unlike the live-GPS `driverPos`, which is only set intermittently
+  // by WS broadcasts and was making the blue driver pin disappear). Fall back to a
+  // raw location string, then the live driverPos, only if coords aren't present.
+  const reqDriver: LL | null = useMemo(() => {
+    const r = activeRequest as any
+    if (r?.location_lat != null && r?.location_lng != null) {
+      return { lat: Number(r.location_lat), lng: Number(r.location_lng) }
+    }
+    const loc = r?.location ?? r?.location_address
+    if (loc) {
+      const [lat, lng] = String(loc).split(',').map(Number)
+      if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) return { lat, lng }
+    }
+    return driverPos
+  }, [
+    (activeRequest as any)?.location_lat, (activeRequest as any)?.location_lng,
+    (activeRequest as any)?.location, (activeRequest as any)?.location_address, driverPos,
+  ])
   const sim = useJobSim({
     isLoaded,
     active: !!enRoute,
@@ -858,9 +892,9 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             <div style={{ ...mapCardStyle, background: C.surface2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '0 24px' }}>
               <MapPin style={{ width: 36, height: 36, color: C.amber, opacity: 0.8 }} />
               <p style={{ fontSize: 13, color: C.textMuted, textAlign: 'center', lineHeight: 1.5 }}>{locationText}</p>
-              {(driverPos || (activeRequest.location_lat && activeRequest.location_lng)) && (
+              {reqDriver && (
                 <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${activeRequest.location_lat ?? driverPos?.lat},${activeRequest.location_lng ?? driverPos?.lng}`}
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${reqDriver.lat},${reqDriver.lng}`}
                   target="_blank" rel="noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 20, background: C.amber, color: '#000', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}
                 >
@@ -875,9 +909,6 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
               <span style={{ color: C.textFaint, fontSize: 13 }}>Loading map…</span>
             </div>
           )
-
-          const driverIcon: google.maps.Icon   = { url: DRIVER_PIN_SVG,   scaledSize: new (window as any).google.maps.Size(44, 56), anchor: new (window as any).google.maps.Point(22, 53) }
-          const providerIcon: google.maps.Icon = { url: MECHANIC_CAR_SVG, scaledSize: new (window as any).google.maps.Size(43, 53), anchor: new (window as any).google.maps.Point(21.5, 50.5) }
 
           // Monotonic ETA + distance from the shared simulation (no flicker).
           const etaText  = enRoute && sim.etaMinutes != null
@@ -896,73 +927,6 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             WebkitTextFillColor: 'transparent', color: '#F59E0B',
           }
           const etaNum = etaText && etaText !== 'Arriving' ? etaText.replace(/\D+$/, '').trim() : null
-
-          const mapOpts = {
-            disableDefaultUI: true,
-            gestureHandling: 'cooperative',
-            clickableIcons: false,
-            zoomControl: true,
-            zoomControlOptions: { position: (window as any).google.maps.ControlPosition.RIGHT_BOTTOM },
-            styles: MAP_LIGHT_STYLES,
-          }
-
-          // While en route the pin rides the SAME deterministic route the driver
-          // sees; once arrived it sits with the driver. The route shrinks as he
-          // advances and never changes underneath him.
-          // While en route the pin is ONLY the simulated position (identical to the
-          // driver app) — never a flash of real GPS before the route loads.
-          const mechMarkerPos = activeRequest?.status === 'arrived'
-            ? driverPos
-            : (enRoute ? sim.mechPos : myPos)
-          const simRemaining = enRoute ? sim.remaining : null
-          // TEMP DIAGNOSTIC — remove once the driver-pin issue is pinned down.
-          console.log('[ActiveJob map]', {
-            status: activeRequest?.status,
-            driverMarkerPos, mechMarkerPos,
-            reqDriver, driverPos,
-            location_lat: (activeRequest as any)?.location_lat,
-            location_lng: (activeRequest as any)?.location_lng,
-            location_str: (activeRequest as any)?.location,
-            simReady: sim.ready, simRemainingPts: sim.remaining?.length ?? 0,
-          })
-          const renderMapContent = (_ref: React.MutableRefObject<google.maps.Map | null>, onLoad: (m: google.maps.Map) => void) => (
-            <GoogleMap mapContainerStyle={MAP_CONTAINER_STYLE} center={KAMPALA_CENTER} zoom={13} options={mapOpts} onLoad={onLoad}>
-              {driverMarkerPos && <Marker position={driverMarkerPos} icon={driverIcon} title="Driver" zIndex={1000} />}
-              {mechMarkerPos && <Marker position={mechMarkerPos} icon={providerIcon} title="You" zIndex={1001} />}
-              {simRemaining && simRemaining.length >= 2 && (
-                // key tracks the journey so the line is re-drawn as the mechanic
-                // advances — otherwise its path freezes at the full route and the
-                // pin just slides over a static line instead of the road shrinking.
-                <Polyline key={`route-${Math.round(sim.progress * 300)}`} path={simRemaining} options={{ strokeColor: '#F59E0B', strokeWeight: 6, strokeOpacity: 0.9, zIndex: 10 }} />
-              )}
-              {garageDest?.lat != null && garageDest?.lng != null && (
-                <Marker position={{ lat: garageDest.lat, lng: garageDest.lng }} icon={{ url: GARAGE_PIN_SVG, scaledSize: new (window as any).google.maps.Size(40, 49), anchor: new (window as any).google.maps.Point(20, 48) }} title={`Tow to: ${garageDest.name}`} />
-              )}
-            </GoogleMap>
-          )
-
-          const mapOverlays = (full: boolean) => (
-            <>
-              <div style={{ position: 'absolute', bottom: full ? 28 : 10, left: 10, display: 'flex', gap: 5, pointerEvents: 'none', zIndex: 10 }}>
-                {driverPos && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, background: 'rgba(10,14,30,0.82)', color: '#e2e8f0', borderRadius: 8, padding: '4px 9px', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(4px)' }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#3B82F6', flexShrink: 0, boxShadow: '0 0 5px #3B82F6' }} /> Driver
-                  </span>
-                )}
-                {mechMarkerPos && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, background: 'rgba(10,14,30,0.82)', color: '#e2e8f0', borderRadius: 8, padding: '4px 9px', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(4px)' }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0, boxShadow: '0 0 5px #EF4444' }} /> You
-                  </span>
-                )}
-              </div>
-              {/* ETA/distance moved OFF the map → shown in the loader strip above it. */}
-              <button
-                onClick={() => setMapExpanded(e => !e)}
-                style={{ position: 'absolute', top: full ? 18 : 10, right: 10, zIndex: 20, width: 34, height: 34, borderRadius: 10, background: 'rgba(10,14,30,0.82)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                {full ? <Minimize2 style={{ width: 14, height: 14, color: '#e2e8f0' }} /> : <Maximize2 style={{ width: 14, height: 14, color: '#e2e8f0' }} />}
-              </button>
-            </>
-          )
 
           return (
             <>
@@ -992,18 +956,19 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
                   </div>
                 </div>
               )}
-              <div className="motofix-map" style={{ ...mapCardStyle, display: mapExpanded ? 'none' : 'block' }}>
-                {renderMapContent(mapRef, onMapLoad)}
-                {mapOverlays(false)}
+              {/* Same map component the driver sees — identical pins + shrinking route.
+                  Anchored to the driver's pinned location (reqDriver). */}
+              <div style={{ marginBottom: 12 }}>
+                <TrackingMap
+                  driverLat={reqDriver?.lat ?? null}
+                  driverLng={reqDriver?.lng ?? null}
+                  arrived={activeRequest.status === 'arrived'}
+                  assigned={['accepted', 'en_route'].includes(activeRequest.status)}
+                  simActive={enRoute}
+                  requestId={activeRequest.id}
+                  enRouteAt={(activeRequest as any).en_route_at}
+                />
               </div>
-              {mapExpanded && (
-                <div className="motofix-map" style={{ position: 'fixed', inset: 0, zIndex: 300, background: '#000' }}>
-                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                    {renderMapContent(mapRefExp, onMapLoadExp)}
-                    {mapOverlays(true)}
-                  </div>
-                </div>
-              )}
             </>
           )
         })()}
@@ -1086,8 +1051,8 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
             />
           </div>
 
-          {/* Arrived status: AI diagnosis (price-quote flow removed for now) */}
-          {status === 'arrived' && (
+          {/* AI diagnosis — only once the mechanic has actually started the service */}
+          {status === 'service_started' && (
             <div style={{ marginBottom: 12 }}>
               <button
                 onClick={() => setShowDiagnostic(true)}

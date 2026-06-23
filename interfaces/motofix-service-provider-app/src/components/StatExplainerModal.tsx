@@ -1,3 +1,6 @@
+// StatExplainerModal.tsx — a popup that explains what a given stat means and how it's
+// calculated (e.g. how the rating or completion rate is worked out), opened from a StatChip.
+
 import { useEffect, useState } from 'react'
 import { X, TrendingUp, CheckCircle, Star, Loader2 } from 'lucide-react'
 import { C } from '@/styles/tokens'

@@ -1,3 +1,6 @@
+// Settings.tsx — the platform settings screen: appearance (theme) plus operational
+// settings like the platform fees and maintenance mode (saved to the backend via lib/api).
+
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';

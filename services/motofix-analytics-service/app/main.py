@@ -1,4 +1,13 @@
-# app/main.py
+# app/main.py — Analytics & Reporting Service (entry point)
+#
+# Powers the admin control room. It reads across the platform's data to produce the
+# numbers and lists admins see — totals, trends, revenue, and detailed views of
+# requests/drivers/mechanics — plus the mechanic subscription endpoints.
+#
+# This file starts the service (CORS + database pools) and plugs in:
+#   routers/admin.py         — the dashboard data/reports (admin-only)
+#   routers/auth.py          — admin sign-in for this service
+#   routers/subscriptions.py — mechanic subscription status/payments
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware

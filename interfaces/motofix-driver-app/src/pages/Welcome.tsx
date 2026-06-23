@@ -1,3 +1,6 @@
+// Welcome.tsx — the intro screen after the splash, introducing MOTOFIX before the user
+// chooses to continue as a driver (or head to the provider app).
+
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 

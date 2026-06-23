@@ -1,3 +1,7 @@
+// ReminderPrompt.tsx — the actual nudge shown for a due maintenance item. It phrases the
+// checklist item as a yes/no question ("Did you check tyre pressure?") and, when the
+// driver confirms, marks that item done so it stops being counted as due.
+
 import { toast } from 'sonner'
 import { markItemChecked, type ChecklistItem, type ChecklistSection } from '@/lib/reminders'
 import { addNotification } from '@/lib/notifications'

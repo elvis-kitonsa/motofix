@@ -1,3 +1,9 @@
+# app/models.py
+# Database tables for the insurance service, described as Python classes (ORM models).
+#   Claim       — an insurance claim a driver files (incident details + status).
+#   ClaimPhoto  — photos attached to a claim; "ON DELETE CASCADE" means a claim's
+#                 photos are automatically removed if the claim itself is deleted.
+
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import func

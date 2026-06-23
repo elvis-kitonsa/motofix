@@ -1,3 +1,7 @@
+// ThemeContext.tsx — app-wide light/dark mode for the admin portal. Any component can
+// call useTheme() to read or toggle the theme; the choice is saved in the browser and
+// applied via a class on the page root so it persists between visits.
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 type Theme = 'dark' | 'light';

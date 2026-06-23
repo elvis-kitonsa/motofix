@@ -1,3 +1,8 @@
+// FinalPaymentFlow.tsx — the end-of-job payment screen shown to the driver once the
+// mechanic finishes. It presents the agreed charge and what was fixed, then lets the
+// driver pay by Mobile Money (MTN/Airtel) or mark it as cash. Replaced the old
+// QuoteModal. NOTE: the MoMo fee math here is a demo simulation, not a real charge.
+
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Loader2, Smartphone, DollarSign, Sparkles, ArrowRight, Wrench, MessageSquare } from 'lucide-react'
 
@@ -48,7 +53,13 @@ export default function FinalPaymentFlow({
   requestId, amountDue, mechanicName, mechanicPhone, serviceNote, sendMessage, lastMessage, onPaid, onMessageMechanic,
 }: Props) {
   const [step, setStep] = useState<Step>('confirm')
-  const firstName = mechanicName.split(' ')[0] || 'your mechanic'
+  // The mechanic's first name for mid-sentence use ("message Bbosa", "pay Bbosa").
+  // When there's no real name, fall back to the full phrase "your mechanic" (NOT just
+  // "your", which the old split produced from the "your mechanic" placeholder).
+  const _first = mechanicName.trim().split(' ')[0]
+  const firstName = _first && _first.toLowerCase() !== 'your' ? _first : 'your mechanic'
+  // Capitalised form for the start of a sentence.
+  const firstNameCap = firstName.charAt(0).toUpperCase() + firstName.slice(1)
   const phone = mechanicPhone || 'the mechanic’s number'
 
   // ── MoMo gateway state ──
@@ -116,7 +127,7 @@ export default function FinalPaymentFlow({
             {ring(PURPLE, Wrench)}
             <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-hi)', textAlign: 'center', marginBottom: 6 }}>Has the service been provided?</h2>
             <p style={{ fontSize: 13, color: 'var(--text-lo)', textAlign: 'center', lineHeight: 1.55, marginBottom: 18 }}>
-              {firstName} marked the job complete. Confirm so you can settle the bill of <strong style={{ color: PURPLE }}>{fmt(amountDue)}</strong>.
+              {firstNameCap} marked the job complete. Confirm so you can settle the bill of <strong style={{ color: PURPLE }}>{fmt(amountDue)}</strong>.
             </p>
             <button style={primaryBtn} onClick={() => setStep('method')}><CheckCircle2 style={{ width: 18, height: 18 }} /> Yes, it’s been done</button>
             <button style={{ ...ghostBtn, marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }} onClick={onMessageMechanic}>
@@ -128,7 +139,7 @@ export default function FinalPaymentFlow({
         {/* 2 ── Quote + choose method ────────────────────────────────── */}
         {step === 'method' && (
           <>
-            <p style={{ fontSize: 12, color: 'var(--text-faint)', textAlign: 'center' }}>{firstName} quoted</p>
+            <p style={{ fontSize: 12, color: 'var(--text-faint)', textAlign: 'center' }}>{firstNameCap} quoted</p>
             <p style={{ fontSize: 32, fontWeight: 900, color: PURPLE, textAlign: 'center', letterSpacing: '-0.02em', marginBottom: serviceNote ? 6 : 16 }}>{fmt(amountDue)}</p>
             {serviceNote && <p style={{ fontSize: 12, color: 'var(--text-lo)', textAlign: 'center', lineHeight: 1.5, marginBottom: 16 }}>{serviceNote}</p>}
             <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-faint)', marginBottom: 10 }}>How would you like to pay?</p>
@@ -223,7 +234,7 @@ export default function FinalPaymentFlow({
         {step === 'notreceived' && (
           <>
             {ring('#F59E0B', DollarSign)}
-            <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-hi)', textAlign: 'center', marginBottom: 6 }}>{firstName} hasn’t received it</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-hi)', textAlign: 'center', marginBottom: 6 }}>{firstNameCap} hasn’t received it</h2>
             <p style={{ fontSize: 13, color: 'var(--text-lo)', textAlign: 'center', lineHeight: 1.55, marginBottom: 18 }}>The Mobile Money payment didn’t reach them. We recommend settling in <strong>cash</strong> instead.</p>
             <button style={{ ...primaryBtn, background: `linear-gradient(135deg, ${GREEN}, #16A34A)` }} onClick={() => setStep('cash')}><CheckCircle2 style={{ width: 18, height: 18 }} /> Agree — pay cash</button>
           </>
@@ -234,7 +245,7 @@ export default function FinalPaymentFlow({
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
             {ring(GREEN, CheckCircle2)}
             <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-hi)', marginBottom: 6 }}>Payment received!</h2>
-            <p style={{ fontSize: 13, color: 'var(--text-lo)', lineHeight: 1.55 }}>{firstName} has confirmed your payment. Wrapping up the job…</p>
+            <p style={{ fontSize: 13, color: 'var(--text-lo)', lineHeight: 1.55 }}>{firstNameCap} has confirmed your payment. Wrapping up the job…</p>
           </div>
         )}
       </div>

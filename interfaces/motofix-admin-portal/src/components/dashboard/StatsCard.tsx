@@ -1,3 +1,6 @@
+// StatsCard.tsx — a single headline-number tile on the dashboard (e.g. "Total requests"),
+// with an optional up/down trend indicator and a loading skeleton while data arrives.
+
 import { ReactNode } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowUpRight, ArrowDownRight, MoreHorizontal } from 'lucide-react';

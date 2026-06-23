@@ -1,3 +1,7 @@
+// ProviderGateway.tsx — the crossover screen for someone who's actually a mechanic/tow
+// provider, pointing them to the separate provider app (VITE_PROVIDER_URL) to log in or
+// apply, rather than using the driver app.
+
 import { useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, LogIn, ClipboardList, Wrench } from 'lucide-react'

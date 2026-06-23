@@ -1,3 +1,18 @@
+// App.tsx — the root of the driver app.
+//
+// Two jobs:
+//   1. AppContent below maps every URL to the page that should show (the <Routes>).
+//      Pages wrapped in <PrivateRoute> require the user to be logged in; the rest
+//      (splash, welcome, login, signup...) are public.
+//   2. The App component at the bottom wraps everything in "providers" — shared
+//      services any page can tap into. Order matters (outer wraps inner):
+//        Theme (light/dark) → WebSocket (live server updates) → Request (the
+//        driver's active/past requests). So a page can read requests, which can
+//        react to WebSocket events, which respect the theme.
+//
+// New screen? Add its page import, then a <Route> here. If it shouldn't show the
+// bottom nav bar, also add its path to `hideNavRoutes`.
+
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,7 +22,7 @@ import { MotobotFab } from "@/components/MotobotFab";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { NetworkBanner } from "@/components/NetworkBanner";
 import InactivityGuard from "@/components/InactivityGuard";
-import { RequestProvider } from "@/contexts/RequestContext";
+import { RequestProvider, useRequests } from "@/contexts/RequestContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,11 +65,16 @@ const queryClient = new QueryClient();
 function AppContent() {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
+  const { requests } = useRequests();
   useFcmToken(isAuthenticated);
   // Never fire reminder pop-ups on public/auth screens (splash, welcome, login,
   // signup, verifying, onboarding) — even if a stale token leaves isAuthenticated true.
   const onPublicScreen = ['/', '/welcome', '/driver-entry', '/login', '/signup', '/verifying', '/onboarding'].includes(location.pathname);
-  useReminderScheduler(isAuthenticated && !onPublicScreen);
+  // Don't interrupt an active job with reminder pop-ups. A job is "in progress" from
+  // the moment a request is placed until it's done — i.e. any request that isn't yet
+  // completed or cancelled (the post-completion rating modal fires on its own).
+  const jobInProgress = requests.some((r) => r.status !== 'completed' && r.status !== 'cancelled');
+  useReminderScheduler(isAuthenticated && !onPublicScreen && !jobInProgress);
   const hideNavRoutes = ['/login', '/signup', '/welcome', '/driver-entry', '/', '/onboarding', '/verifying', '/reminders', '/reminder-settings', '/notifications', '/locating', '/describe-issue', '/fault-chat', '/diagnose', '/nearby-mechanics', '/emergency', '/insurance', '/terms-of-service', '/privacy-policy', '/rate-motofix', '/contact-support', '/spare-parts', '/parts-needed', '/parts-orders'];
   const showBottomNav = !hideNavRoutes.includes(location.pathname) && !location.pathname.startsWith('/requests/');
 

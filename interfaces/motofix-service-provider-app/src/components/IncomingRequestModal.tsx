@@ -1,5 +1,9 @@
+// IncomingRequestModal.tsx — the pop-up that appears when a new job is offered to the
+// mechanic: shows the fault, customer location and any photo, with a countdown, so they can
+// accept or decline. This is the key "you've got a job!" prompt.
+
 import { useState, useEffect, useRef } from 'react'
-import { Wrench, Truck, MapPin, X } from 'lucide-react'
+import { Wrench, Truck, MapPin, X, Clock } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { useReadableLocation } from '@/utils/geocode'
 import type { ServiceRequest } from '@/types'
@@ -51,6 +55,15 @@ export default function IncomingRequestModal({ request, onAccept, onDecline }: P
   const ServiceIcon = isTowing ? Truck : Wrench
 
   const timerColor = seconds > 120 ? C.amber : seconds > 60 ? '#fb923c' : '#f87171'
+
+  // When the driver sent the request — shown so the mechanic knows how fresh it is.
+  const requestedAt = (() => {
+    const raw = (request as any).created_at
+    if (!raw) return null
+    const ts = /[Z+]/.test(String(raw)) ? String(raw) : String(raw) + 'Z'
+    const d = new Date(ts)
+    return isNaN(d.getTime()) ? null : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  })()
 
   return (
     <>
@@ -234,6 +247,19 @@ export default function IncomingRequestModal({ request, onAccept, onDecline }: P
               <p style={{ fontSize: 12, color: C.textHi, lineHeight: 1.4 }}>{locationText}</p>
             </div>
           </div>
+
+          {/* Requested at — how fresh the request is */}
+          {requestedAt && (
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 3 }}>
+                Requested At
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock style={{ width: 13, height: 13, color: C.amber, flexShrink: 0 }} />
+                <p style={{ fontSize: 12, color: C.textHi, lineHeight: 1.4 }}>{requestedAt}</p>
+              </div>
+            </div>
+          )}
 
         </div>
 

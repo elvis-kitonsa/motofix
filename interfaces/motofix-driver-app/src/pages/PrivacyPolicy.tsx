@@ -1,3 +1,6 @@
+// PrivacyPolicy.tsx — the static privacy-policy screen (what data MOTOFIX collects and
+// how it's used). Reached from Settings; content only, no logic.
+
 import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {

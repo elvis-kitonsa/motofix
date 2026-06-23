@@ -1,3 +1,7 @@
+// Onboarding.tsx — first-time profile setup for a new driver, including the optional
+// driving-licence photo upload that gets AI-checked for authenticity. Exports
+// PROFILE_COMPLETE_KEY, which other screens read to know onboarding is finished.
+
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {

@@ -1,3 +1,7 @@
+// BottomNav.tsx — the fixed navigation bar at the bottom of the main screens
+// (Home, request help, history, profile). Highlights the tab matching the current
+// page. App.tsx decides when to show it (hidden on login/flow/detail screens).
+
 import { Link, useLocation } from 'react-router-dom';
 import { Home, History, User, PlusCircle } from 'lucide-react';
 

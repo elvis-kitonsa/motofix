@@ -1,3 +1,18 @@
+# main.py — Mechanic Matching Service (the web/API layer)
+#
+# This is the entry point of the matching service. The actual "who's the best
+# mechanic" maths lives in scoring.py; this file wires that up to the outside world.
+#
+# The typical flow when a driver breaks down:
+#   1. Another service calls POST /match with the breakdown location + problem type.
+#   2. We ask the Verification Service for the list of verified, available mechanics.
+#   3. We skip anyone who already declined/ignored THIS request (so we don't re-ask them).
+#   4. scoring.py ranks the rest; we save them as "pending" and return the top few.
+#   5. As each mechanic responds, POST /dispatch/{id}/outcome records accepted/declined/expired.
+#   6. If they decline, the caller calls /match again — step 3 now skips them automatically.
+#
+# All endpoints require a valid login token (see _require_token below).
+
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -33,8 +48,13 @@ pool: Optional[asyncpg.Pool] = None
 async def lifespan(app: FastAPI):
     global pool
     if DATABASE_URL:
+        # Open a small pool of reusable database connections (faster than opening
+        # a fresh connection for every request).
         pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
         async with pool.acquire() as conn:
+            # Make sure our one table exists. It logs every time we offer a request
+            # to a mechanic and what happened (pending → accepted/declined/expired).
+            # The UNIQUE rule stops the same mechanic being logged twice for one request.
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS dispatch_attempts (
                     id           SERIAL PRIMARY KEY,
@@ -137,7 +157,9 @@ async def match_mechanics(
     scores each one using the weighted algorithm, excludes any mechanics who have
     already declined or timed out on this request, and returns the top candidates.
     """
-    # Build exclusion list from manual override + DB history
+    # Build the "don't offer to these mechanics" list. It combines any IDs the
+    # caller passed in manually with anyone who already declined or ran out of
+    # time on this same request (looked up from the dispatch_attempts table).
     excluded_ids: List[int] = list(body.excluded_mechanic_ids or [])
     if pool and body.request_id:
         async with pool.acquire() as conn:
@@ -181,7 +203,9 @@ async def match_mechanics(
             detail="No eligible mechanics found within range for this request.",
         )
 
-    # Record these mechanics as 'pending' dispatch attempts
+    # Save the chosen mechanics as 'pending' so that if we re-run /match later
+    # (because someone declined) we remember who we already contacted.
+    # ON CONFLICT DO NOTHING = quietly skip ones already logged for this request.
     if pool and body.request_id:
         async with pool.acquire() as conn:
             for candidate in ranked:

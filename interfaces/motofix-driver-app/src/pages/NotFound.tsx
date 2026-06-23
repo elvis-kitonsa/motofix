@@ -1,3 +1,6 @@
+// NotFound.tsx — the 404 page shown when a URL doesn't match any route (the catch-all
+// "*" route in App.tsx). Logs the bad path and offers a way back.
+
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 

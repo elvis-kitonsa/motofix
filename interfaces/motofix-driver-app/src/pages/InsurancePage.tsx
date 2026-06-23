@@ -1,3 +1,7 @@
+// InsurancePage.tsx — the driver's insurance hub. They can browse insurers, apply for
+// cover, and file/track a claim (with incident details + photos). Talks to the insurance
+// service. Covers both the "apply for cover" lead flow and the claims flow.
+
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {

@@ -1,3 +1,6 @@
+// Header.tsx — the simple sticky title bar at the top of a page. Pass an optional
+// title and subtitle; defaults to the "Motofix" branding when none are given.
+
 interface HeaderProps {
   title?: string;
   subtitle?: string;

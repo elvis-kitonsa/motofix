@@ -194,6 +194,9 @@ interface RawDealerIn {
   phone: string | null; category: string
   rating?: number | null; reviews?: number | null
   hours?: string | null; photo?: string | null
+  // Admin-directory dealers supply their own specialty + blurb; prefer these
+  // over the category-derived defaults below.
+  specialization?: string | null; tagline?: string | null
 }
 
 const CAT_SPEC: Record<string, string> = {
@@ -221,8 +224,8 @@ export function enrichDealer(raw: RawDealerIn): SimDealer {
     name: raw.name,
     brand: raw.name,
     color, color2, mark,
-    tagline: '',
-    specialization: CAT_SPEC[raw.category] ?? 'Spare parts & accessories',
+    tagline: raw.tagline || '',
+    specialization: raw.specialization || CAT_SPEC[raw.category] || 'Spare parts & accessories',
     vicinity: raw.vicinity || 'Near you',
     lat: raw.lat, lng: raw.lng,
     distance_km: raw.distance_km,

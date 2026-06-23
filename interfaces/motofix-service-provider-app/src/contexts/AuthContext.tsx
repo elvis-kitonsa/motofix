@@ -1,3 +1,8 @@
+// AuthContext.tsx — app-wide login state for the provider. Any screen calls useAuth() to
+// read the current user/token or to log in/out. On login it saves the token + user to the
+// browser (so the session survives refreshes) and starts the inactivity clock; on logout it
+// clears them. The token lives under 'motofix_sp_token'.
+
 import { createContext, useContext, useState } from 'react'
 import type { User } from '@/types'
 import { startActivity, clearInactivity } from '@/utils/sessionTimeout'

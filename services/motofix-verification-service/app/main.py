@@ -1,4 +1,13 @@
-# motofix-mechanics-service: app/main.py
+# motofix-mechanics-service: app/main.py — Mechanics / Verification Service (entry point)
+#
+# Owns the mechanics' profiles and their live status. This is the service the matching
+# engine asks "who's a verified, available mechanic near here?" when dispatching a job.
+# It tracks each mechanic's location, availability (online/offline), verification status,
+# rating and jobs completed.
+#
+# This file starts the service (database pool + table setup + CORS) and plugs in:
+#   routers/auth.py      — mechanic login, profile, going online/offline, location updates
+#   routers/mechanics.py — listing/looking up mechanics (used by the matching service)
 
 import os
 from datetime import datetime

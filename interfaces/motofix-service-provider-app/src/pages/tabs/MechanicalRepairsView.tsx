@@ -1,3 +1,7 @@
+// tabs/MechanicalRepairsView.tsx — the mechanic's repairs reference: how-to repair guides
+// with steps and YouTube links, the MOTOBOT diagnostic assistant (detailed pro guidance), and
+// a parts lookup. A knowledge hub to help mechanics fix faults. Opened from the Home tab.
+
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { ElementType, ReactNode } from 'react'
 import {

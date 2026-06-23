@@ -1,3 +1,6 @@
+// TableFilters.tsx — the filter bar above a DataTable: a search box plus any FilterSelect
+// dropdowns, so admins can narrow down what the table shows.
+
 import { ReactNode } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';

@@ -1,3 +1,6 @@
+// DriverDetail.tsx — the full profile for one driver (reached from Drivers): their info,
+// request history and payments, plus admin actions like changing their account status.
+
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

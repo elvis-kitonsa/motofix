@@ -1,3 +1,7 @@
+// tabs/Home.tsx — the Home tab of the dashboard: the mechanic's landing view with a greeting,
+// their online status, key stats, and entry points to other areas (repairs guide, ratings).
+// One of the four bottom-nav tabs rendered inside Dashboard.
+
 import { useMemo, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRotatingGreeting } from '@/hooks/useRotatingGreeting'

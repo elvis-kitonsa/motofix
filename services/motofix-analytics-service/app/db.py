@@ -1,3 +1,9 @@
+# app/db.py
+# Database connections for the analytics service. Unlike most services, this one
+# connects to TWO databases: its own, plus the auth service's database (so the admin
+# dashboard can read users/mechanics directly). get_db / get_auth_db are the FastAPI
+# dependencies the routers use to borrow a connection from each pool.
+
 import os
 import asyncio
 import asyncpg

@@ -1,3 +1,8 @@
+// OrderPartsShop.tsx — the in-app spare-parts shopping experience: the driver picks
+// the parts they need, MOTOBOT (AI) estimates fair UGX prices, and they place an order
+// with a nearby dealer (the order is sent to the dealer via WhatsApp and saved as the
+// driver's order history). Big component because it covers browse → cart → order.
+
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { ElementType } from 'react'
 import {

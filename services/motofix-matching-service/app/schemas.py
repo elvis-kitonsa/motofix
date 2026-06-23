@@ -1,3 +1,14 @@
+# schemas.py
+# Defines the SHAPE of the data this service sends and receives over the API.
+# Each class is one "form": it lists the fields allowed, their types, and whether
+# they're required. FastAPI uses these to automatically check incoming requests
+# and to document the API. Read these first to understand what the service expects.
+#
+#   MatchRequest      — what the caller sends in (where + what kind of help is needed)
+#   MechanicCandidate — one scored mechanic in the reply
+#   MatchResponse     — the full reply: the ranked list of candidates
+#   DispatchOutcome   — report back whether a mechanic accepted/declined/expired
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 

@@ -1,3 +1,7 @@
+// RequestCard.tsx — the summary tile for one service request, shown in the home/history
+// lists. Displays the service type, status, time and location (turning raw coordinates
+// into a readable address), and links through to the full request detail.
+
 import { MapPin, Wrench, Clock, ChevronRight, Phone, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { requestsService } from '@/config/api';

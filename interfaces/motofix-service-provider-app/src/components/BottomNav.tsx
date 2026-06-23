@@ -1,3 +1,6 @@
+// BottomNav.tsx — the bottom tab bar on the dashboard, switching between the four main tabs:
+// Home, Jobs, Earnings and Profile. Highlights the active tab.
+
 import { LayoutDashboard, ClipboardList, Wallet, User } from 'lucide-react'
 
 type Tab = 'home' | 'jobs' | 'earnings' | 'profile'

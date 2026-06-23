@@ -1,3 +1,13 @@
+# app/main.py — Insurance Service
+#
+# Handles vehicle insurance inside MOTOFIX. Two main jobs:
+#   1. Applications — a driver applies for cover; we record it as a lead and the
+#      driver picks one of several insurers from a catalog.
+#   2. Claims — a driver files a claim after an incident (with photos), and it moves
+#      through statuses (pending → reviewed → approved/rejected).
+#
+# Uploaded claim photos are saved to the UPLOADS_DIR folder and served back to the apps.
+
 import base64
 import logging
 import os

@@ -1,3 +1,6 @@
+// SpareParts.tsx — the mechanic's spare-parts screen: find nearby parts dealers on a map and
+// look up parts, so they can source what a repair needs while on a job.
+
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { ElementType } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -9,7 +12,7 @@ import {
   GitBranch, Package,
 } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
-import { partsService, diagnosisService, type ProviderPartsOrder } from '@/config/api'
+import { partsService, diagnosisService, dealerService, type ProviderPartsOrder } from '@/config/api'
 import { toast } from 'sonner'
 
 const LIBS: ('places')[] = ['places']
@@ -199,10 +202,22 @@ export default function SpareParts() {
     } catch { /* keep catalogue range */ }
     setAiPrice(unit)
 
-    // 2) Nearby suppliers via Places (the real "suppliers in your area").
+    // 2) Suppliers — the admin-registered dealer directory first (real businesses),
+    //    falling back to Google Places only if the directory has none nearby.
     const found: Supplier[] = []
     try {
-      if (isLoaded && posRef.current && window.google?.maps?.places) {
+      if (posRef.current) {
+        const res = await dealerService.searchNearby(posRef.current.lat, posRef.current.lng)
+        ;(res.data?.dealers ?? []).slice(0, 8).forEach(d => found.push({
+          name: d.name,
+          vicinity: d.address || d.location || undefined,
+          phone: d.phone || undefined,
+          place_id: `dealer-${d.id}`,
+        }))
+      }
+    } catch { /* fall through to Places */ }
+    try {
+      if (found.length === 0 && isLoaded && posRef.current && window.google?.maps?.places) {
         const svc = new google.maps.places.PlacesService(document.createElement('div'))
         await new Promise<void>(resolve => {
           svc.nearbySearch(

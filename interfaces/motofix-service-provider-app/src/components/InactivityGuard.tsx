@@ -1,3 +1,7 @@
+// InactivityGuard.tsx — tracks user activity for the 15-minute auto-logout, and if the last
+// page load found an expired session, shows a "signed out for inactivity" notice that sends
+// the mechanic back to login.
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock, ArrowRight } from 'lucide-react'

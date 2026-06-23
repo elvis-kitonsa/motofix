@@ -1,3 +1,7 @@
+// NotificationCenter.tsx — the bell/dropdown in the top bar showing admin notifications
+// (new applications, fee payments, etc.), with unread counts and mark-as-read. Polls the
+// backend via fetchAdminNotifications.
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bell, X, CheckCheck, Wrench, CreditCard, Car, BadgeCheck, AlertCircle, Mail } from 'lucide-react';
 import { fetchAdminNotifications, AdminNotification } from '@/lib/api';
@@ -289,8 +293,12 @@ export function NotificationCenter() {
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 60000);
-    return () => clearInterval(interval);
+    // Poll fairly often so real-time events (e.g. a mechanic settling platform fees)
+    // light up the bell within a few seconds without needing a page refresh.
+    const interval = setInterval(loadNotifications, 15000);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadNotifications(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [loadNotifications]);
 
   const notifications: Notification[] = rawItems.map(n => ({

@@ -1,3 +1,6 @@
+// ContactSupport.tsx — the help/support screen: ways to reach the MOTOFIX team (phone,
+// WhatsApp, email) and common questions, for when a driver needs a human.
+
 import { useState } from 'react';
 import type { ElementType } from 'react';
 import { useNavigate } from 'react-router-dom';

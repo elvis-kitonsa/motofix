@@ -1,6 +1,10 @@
+// tabs/Earnings.tsx — the Earnings tab: shows what the mechanic has earned and the platform
+// fees they owe (the 10k-per-job fee). Also handles paying off outstanding fees, which is what
+// can gate going online (see the platform-fee logic in the dispatch service).
+
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Wallet, AlertTriangle, CheckCircle, Lock, Sparkles, X, Loader2, Info, ShieldCheck, Wrench,
+  Wallet, AlertTriangle, CheckCircle, Lock, Sparkles, X, Loader2, Info, ShieldCheck, Wrench, Smartphone,
 } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -11,8 +15,12 @@ import SkeletonCard from '@/components/SkeletonCard'
 // MOTOFIX's revenue is a flat per-job platform fee (this screen replaced the old
 // monthly subscription). The mechanic settles their owed balance here; the payment is
 // AI-verified from the MoMo confirmation, after which the platform un-gates them.
-const MOTOFIX_MOMO = '0770 000 000'
+// MOTOFIX's collection line — the mechanic sends their platform fees here. Fixed and
+// non-editable on the pay sheet (you can't change who you're paying).
+const MOTOFIX_MOMO = '0700 454 171'
 const Y = '#F59E0B'
+const MTN_YELLOW = '#FFCC00'
+const AIRTEL_RED = '#E40000'
 
 function fmtUGX(n: number) {
   return `UGX ${n.toLocaleString('en-UG')}`
@@ -40,30 +48,56 @@ export default function Earnings() {
   const [mechId, setMechId]   = useState<string | null>(null)
   const [fees,   setFees]     = useState<PlatformFeeState | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)  // true when we couldn't reach the server
   const [showPay, setShowPay] = useState(false)
 
   // Simulated MoMo payment flow: idle → sending → ai-verifying → done
   const [payPhase, setPayPhase] = useState<'idle' | 'sending' | 'verifying' | 'done'>('idle')
   const [payResult, setPayResult] = useState<{ amount: number; cleared: number } | null>(null)
+  const [network, setNetwork] = useState<'mtn' | 'airtel'>('mtn')
+  const [payAmount, setPayAmount] = useState('')   // "Enter amount to pay" — defaults to the owed balance
 
   const loadFees = useCallback(async (id: string) => {
     try {
       const res = await feesService.getFees(id)
-      setFees(res.data)
-    } catch { /* keep prior state */ }
+      const d = res.data
+      // Guard against a non-JSON reply (e.g. an SPA index.html fallback when /fees isn't
+      // routed): if it isn't a real fee payload, treat it as a load error — never as 0 owed.
+      if (!d || typeof d !== 'object' || typeof d.owed_amount !== 'number') {
+        setLoadError(true)
+        return
+      }
+      setFees(d)
+      setLoadError(false)   // got a real answer from the server
+    } catch {
+      // Important: a failed request must NOT look like "owed 0" / "Nothing to pay".
+      // Flag the error so the UI can say so and offer a retry instead.
+      setLoadError(true)
+    }
   }, [])
 
-  useEffect(() => {
-    mechanicService.getProfile()
-      .then(async (res) => {
-        const id = String(res.data.id)
-        setMechId(id)
-        await loadFees(id)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+  // Look up the mechanic's id, then their fee balance. Wrapped so the "Retry" button
+  // can re-run the whole thing if the first attempt couldn't reach the server.
+  const init = useCallback(async () => {
+    setLoading(true)
+    setLoadError(false)
+    try {
+      const res = await mechanicService.getProfile()
+      const id = String(res.data.id)
+      setMechId(id)
+      await loadFees(id)
+    } catch {
+      setLoadError(true)
+    } finally {
+      setLoading(false)
+    }
   }, [loadFees])
 
+  useEffect(() => { init() }, [init])
+
+  // True only when we genuinely couldn't load the balance — used so we never render a
+  // misleading "Nothing to pay" / UGX 0 when the real cause is a failed request.
+  const failed   = loadError && !fees
   const owed     = fees?.owed_amount ?? 0
   const owedJobs = fees?.owed_count ?? 0
   const cap      = fees?.gate_jobs ?? 3
@@ -73,21 +107,26 @@ export default function Earnings() {
   const pct      = Math.min(100, Math.round((owedJobs / cap) * 100))
 
   // Status colour + headline for the balance hero.
-  const tone = locked ? '#F87171' : gated ? '#F97316' : owed > 0 ? Y : C.green
+  const tone = failed ? C.textFaint : locked ? '#F87171' : gated ? '#F97316' : owed > 0 ? Y : C.green
+
+  const amountNum = Math.round(Number(payAmount) || 0)
+  const amountValid = amountNum > 0 && amountNum <= owed
 
   const runSimulatedPayment = async () => {
-    if (!mechId || owed <= 0) return
+    if (!mechId || !amountValid) return
+    const net = network === 'mtn' ? 'MTN' : 'Airtel'
     const ref = `MTX${Date.now().toString().slice(-6)}`
     setPayPhase('sending')
-    // 1) Mechanic "sends" the MoMo payment.
+    // 1) Mechanic "sends" the Mobile Money payment from the chosen network.
     await new Promise(r => setTimeout(r, 1100))
     setPayPhase('verifying')
     // 2) AI reads the MoMo confirmation message and matches it to the balance.
-    const smsText = `MTN MoMo: You have sent ${fmtUGX(owed)} to MOTOFIX LTD (${MOTOFIX_MOMO}). Ref ${ref}. Thank you.`
+    await new Promise(r => setTimeout(r, 800))
+    const smsText = `${net} MoMo: You have sent ${fmtUGX(amountNum)} to MOTOFIX LTD (${MOTOFIX_MOMO}). Ref ${ref}. Thank you.`
     try {
-      const res = await feesService.pay(mechId, { sms_text: smsText, reference: ref })
+      const res = await feesService.pay(mechId, { amount: amountNum, sms_text: smsText, reference: ref })
       const data = res.data as { amount?: number; cleared_jobs?: number }
-      setPayResult({ amount: data.amount ?? owed, cleared: data.cleared_jobs ?? owedJobs })
+      setPayResult({ amount: data.amount ?? amountNum, cleared: data.cleared_jobs ?? 0 })
       await loadFees(mechId)
       setPayPhase('done')
     } catch {
@@ -129,7 +168,7 @@ export default function Earnings() {
               Platform fees owed
             </p>
             <p style={{ fontSize: 26, fontWeight: 900, color: C.textHi, letterSpacing: '-0.02em', lineHeight: 1.1, marginTop: 2 }}>
-              {fmtUGX(owed)}
+              {failed ? '—' : fmtUGX(owed)}
             </p>
           </div>
         </div>
@@ -150,7 +189,14 @@ export default function Earnings() {
         </div>
 
         {/* State banner */}
-        {locked ? (
+        {failed ? (
+          <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 12, background: '#F8717112', border: '1px solid #F8717133', marginBottom: 14 }}>
+            <AlertTriangle style={{ width: 15, height: 15, color: '#F87171', flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>
+              <strong style={{ color: '#F87171' }}>Couldn't load your fees.</strong> We couldn't reach the server — check your connection and tap Retry below.
+            </p>
+          </div>
+        ) : locked ? (
           <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 12, background: '#F8717114', border: '1px solid #F8717133', marginBottom: 14 }}>
             <Lock style={{ width: 15, height: 15, color: '#F87171', flexShrink: 0, marginTop: 1 }} />
             <p style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>
@@ -180,21 +226,38 @@ export default function Earnings() {
           </div>
         )}
 
-        <button
-          onClick={() => setShowPay(true)}
-          disabled={owed <= 0}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 14, border: 'none',
-            cursor: owed > 0 ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
-            background: owed > 0 ? `linear-gradient(135deg, ${tone}, ${tone}CC)` : 'var(--surface-3)',
-            color: owed > 0 ? '#fff' : C.textFaint,
-            fontSize: 14.5, fontWeight: 800,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}
-        >
-          <Wallet style={{ width: 17, height: 17 }} />
-          {owed > 0 ? `Settle ${fmtUGX(owed)}` : 'Nothing to pay'}
-        </button>
+        {failed ? (
+          /* Couldn't load — let the mechanic retry rather than show a misleading button. */
+          <button
+            onClick={() => init()}
+            style={{
+              width: '100%', padding: '14px', borderRadius: 14, border: 'none',
+              cursor: 'pointer', fontFamily: 'inherit',
+              background: `linear-gradient(135deg, ${tone}, ${tone}CC)`, color: '#fff',
+              fontSize: 14.5, fontWeight: 800,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <AlertTriangle style={{ width: 17, height: 17 }} />
+            Retry
+          </button>
+        ) : (
+          <button
+            onClick={() => { setShowPay(true); setPayAmount(String(owed)); setNetwork('mtn') }}
+            disabled={owed <= 0}
+            style={{
+              width: '100%', padding: '14px', borderRadius: 14, border: 'none',
+              cursor: owed > 0 ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+              background: owed > 0 ? `linear-gradient(135deg, ${tone}, ${tone}CC)` : 'var(--surface-3)',
+              color: owed > 0 ? '#fff' : C.textFaint,
+              fontSize: 14.5, fontWeight: 800,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <Wallet style={{ width: 17, height: 17 }} />
+            {owed > 0 ? `Settle ${fmtUGX(owed)}` : 'Nothing to pay'}
+          </button>
+        )}
       </div>
 
       {/* ── How the fee works ─────────────────────────────────── */}
@@ -318,37 +381,97 @@ export default function Earnings() {
                   )}
                 </div>
 
-                <div style={{ borderRadius: 14, padding: '14px 16px', marginBottom: 16, background: `${Y}0E`, border: `1px solid ${Y}28` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: C.textFaint }}>Pay to (MOTOFIX MoMo)</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: C.textHi }}>{MOTOFIX_MOMO}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 12, color: C.textFaint }}>Amount</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: Y }}>{fmtUGX(owed)}</span>
-                  </div>
+                {/* Network — MTN or Airtel Mobile Money only (no cash for platform fees) */}
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                  Pay with
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+                  {([
+                    { id: 'mtn'    as const, label: 'MTN MoMo',    color: MTN_YELLOW, fg: '#000' },
+                    { id: 'airtel' as const, label: 'Airtel Money', color: AIRTEL_RED, fg: '#fff' },
+                  ]).map(opt => {
+                    const sel = network === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => setNetwork(opt.id)}
+                        disabled={payPhase !== 'idle'}
+                        style={{
+                          flex: 1, padding: '13px 10px', borderRadius: 14, cursor: payPhase === 'idle' ? 'pointer' : 'default',
+                          fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                          background: sel ? opt.color : 'var(--surface-2)',
+                          color: sel ? opt.fg : C.textMuted,
+                          border: sel ? `2px solid ${opt.color}` : '1.5px solid var(--border-2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <Smartphone style={{ width: 15, height: 15 }} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
                 </div>
 
-                <p style={{ fontSize: 11.5, color: C.textFaint, lineHeight: 1.6, marginBottom: 16, display: 'flex', gap: 7 }}>
-                  <Sparkles style={{ width: 13, height: 13, color: Y, flexShrink: 0, marginTop: 1 }} />
-                  <span>This is a demo. Tapping below simulates the MoMo charge; our AI then reads the confirmation message and verifies the amount — exactly as it would in production (where the MoMo gateway also confirms automatically).</span>
+                {/* Non-editable MOTOFIX collection number */}
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                  Send to (MOTOFIX number)
+                </p>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  borderRadius: 14, padding: '13px 16px', marginBottom: 16,
+                  background: 'var(--surface-2)', border: '1.5px solid var(--border-2)',
+                }}>
+                  <span style={{ fontSize: 16, fontWeight: 900, color: C.textHi, letterSpacing: '0.04em' }}>{MOTOFIX_MOMO}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: C.textFaint }}>
+                    <Lock style={{ width: 12, height: 12 }} /> Locked
+                  </span>
+                </div>
+
+                {/* Enter amount to pay */}
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                  Amount to pay
+                </p>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  borderRadius: 14, padding: '4px 16px', marginBottom: 8,
+                  background: 'var(--surface-2)', border: `1.5px solid ${amountValid ? `${Y}55` : 'var(--border-2)'}`,
+                }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: C.textFaint }}>UGX</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={payAmount}
+                    onChange={e => setPayAmount(e.target.value)}
+                    disabled={payPhase !== 'idle'}
+                    placeholder={String(owed)}
+                    style={{
+                      flex: 1, padding: '12px 0', border: 'none', outline: 'none', background: 'transparent',
+                      fontFamily: 'inherit', fontSize: 18, fontWeight: 900, color: C.textHi,
+                    }}
+                  />
+                </div>
+                <p style={{ fontSize: 11, color: C.textFaint, marginBottom: 16 }}>
+                  You owe <strong style={{ color: Y }}>{fmtUGX(owed)}</strong>.{' '}
+                  {amountNum > owed ? <span style={{ color: '#F87171' }}>That's more than you owe.</span> : 'You can settle all of it at once.'}
                 </p>
 
                 <button
                   onClick={runSimulatedPayment}
-                  disabled={payPhase !== 'idle'}
+                  disabled={payPhase !== 'idle' || !amountValid}
                   style={{
                     width: '100%', padding: '15px', borderRadius: 14, border: 'none',
-                    cursor: payPhase === 'idle' ? 'pointer' : 'default', fontFamily: 'inherit',
-                    background: `linear-gradient(135deg,${Y},#D97706)`, color: '#000',
+                    cursor: payPhase === 'idle' && amountValid ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+                    background: amountValid ? `linear-gradient(135deg,${Y},#D97706)` : 'var(--surface-3)',
+                    color: amountValid ? '#000' : C.textFaint,
                     fontSize: 14.5, fontWeight: 800,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
                     opacity: payPhase !== 'idle' ? 0.85 : 1,
                   }}
                 >
-                  {payPhase === 'sending' && <><Loader2 style={{ width: 17, height: 17, animation: 'spin 1s linear infinite' }} /> Sending MoMo payment…</>}
+                  {payPhase === 'sending' && <><Loader2 style={{ width: 17, height: 17, animation: 'spin 1s linear infinite' }} /> Sending payment…</>}
                   {payPhase === 'verifying' && <><Sparkles style={{ width: 17, height: 17 }} /> AI verifying payment…</>}
-                  {payPhase === 'idle' && <>Pay {fmtUGX(owed)} via MoMo</>}
+                  {payPhase === 'idle' && <>Complete Payment{amountValid ? ` · ${fmtUGX(amountNum)}` : ''}</>}
                 </button>
               </>
             )}

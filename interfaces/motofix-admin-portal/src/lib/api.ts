@@ -1,4 +1,16 @@
-// src/lib/api.ts
+// src/lib/api.ts — the admin portal's data layer (all server calls live here).
+//
+// Every screen gets its data through a function in this file, so this is the place to
+// look for "where does X come from?". It's large but organised in clear groups:
+//   • Auth token helpers — getAuthToken / setAuthToken / clearAuthToken / isAuthenticated
+//     and the saved admin info (token is kept under 'motofix_admin_token').
+//   • Dashboard — fetchDashboardStats, fetchRevenueChart, fetchLiveStats, fetchMapData...
+//   • Mechanics / providers — list, create, update, delete, ban, reinstate, strikes, fees.
+//   • Requests, Payments, Drivers, Applications, Spare parts, Admin profile/settings.
+//
+// Each function calls one of the shared clients from axiosClient.ts (which add the
+// admin token automatically) and returns typed data. Use these functions — usually via
+// the useDashboardData hook or React Query — instead of calling axios from a page.
 
 import { API_CONFIG } from '@/config/api';
 import requestsClient, { mechanicsClient, authClient } from './axiosClient';
@@ -215,6 +227,8 @@ export interface ServiceRequest {
   createdAt: string;
   dispatchedAt?: string;
   completedAt?: string;
+  actualFee?: number | null;     // the mechanic's final agreed charge (UGX)
+  serviceNote?: string | null;   // what the mechanic fixed
 }
 
 export interface PaginatedResponse<T> {
@@ -271,6 +285,8 @@ export const fetchPublicRequests = async (params: RequestsParams = {}) => {
       createdAt: r.created_at ?? r.createdAt ?? r.timestamp ?? new Date().toISOString(),
       dispatchedAt: r.dispatched_at ?? undefined,
       completedAt: r.completed_at ?? undefined,
+      actualFee: r.actual_fee ?? null,
+      serviceNote: r.service_note ?? null,
     }));
 
     return {
@@ -1125,6 +1141,58 @@ export const upsertPartsCatalog = async (
 
 export const deletePartsCatalog = async (faultCategory: string): Promise<void> => {
   await authClient.delete(`/auth/admin/parts-catalog/${faultCategory}`);
+};
+
+// ── Spare-parts dealer directory (dispatch service) ──────────────────────────
+export interface Dealer {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  specialty: string;
+  description: string;
+  verified: boolean;
+  active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  distance_km?: number | null;
+}
+
+export interface DealerInput {
+  name: string;
+  phone: string;
+  address?: string;
+  location?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  specialty?: string;
+  description?: string;
+  verified?: boolean;
+}
+
+export const fetchDealers = async (): Promise<Dealer[]> => {
+  const resp = await requestsClient.get('/dealers', { params: { limit: 200 } });
+  return Array.isArray(resp.data?.dealers) ? resp.data.dealers : [];
+};
+
+export const createDealer = async (data: DealerInput): Promise<Dealer> => {
+  const resp = await requestsClient.post('/dealers', data);
+  return resp.data;
+};
+
+export const updateDealer = async (
+  id: number,
+  data: Partial<DealerInput> & { active?: boolean },
+): Promise<Dealer> => {
+  const resp = await requestsClient.put(`/dealers/${id}`, data);
+  return resp.data;
+};
+
+export const deleteDealer = async (id: number): Promise<void> => {
+  await requestsClient.delete(`/dealers/${id}`);
 };
 
 export const fetchActivityLog = async (params: {

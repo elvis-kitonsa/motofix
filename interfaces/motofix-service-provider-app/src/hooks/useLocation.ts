@@ -1,3 +1,7 @@
+// useLocation.ts — tracks the phone's live GPS position. Pass active=true to start watching
+// and false to stop (saves battery). Returns the latest lat/lng, accuracy, any error, and
+// whether it's watching — used to share the mechanic's position while travelling to a job.
+
 import { useEffect, useRef, useState } from 'react'
 
 interface LocationState {

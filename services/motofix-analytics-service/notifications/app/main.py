@@ -1,4 +1,10 @@
-# app/main.py
+# notifications/app/main.py — Notifications & Alerts Service (entry point)
+#
+# A small standalone service that sends alerts out to people: SMS and WhatsApp (via
+# Africa's Talking) and push notifications (via Firebase/FCM) to the mobile apps.
+# Other services call its endpoints (e.g. "new job available") to reach mechanics
+# and customers. The actual sending logic lives in routers/notifications.py.
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv

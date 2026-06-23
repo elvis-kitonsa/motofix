@@ -1,3 +1,14 @@
+// WebSocketContext.tsx — one shared live connection to the server.
+//
+// A WebSocket is an always-open line the server can push messages down at any time
+// (used for live job/location updates). We open ONE here and share it app-wide via
+// useWS(), instead of every component opening its own.
+//
+// It reads the logged-in user + token from storage to authenticate the connection,
+// and re-reads them whenever login changes (the 'motofix:auth-changed' event) so the
+// socket reconnects as the right user. The actual connect/reconnect logic is in the
+// useWebSocket hook; this file just supplies the credentials and shares the result.
+
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
 

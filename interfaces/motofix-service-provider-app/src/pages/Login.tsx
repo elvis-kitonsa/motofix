@@ -1,3 +1,6 @@
+// Login.tsx — the provider sign-in screen (e.g. SPN id + password). On success it saves the
+// session via AuthContext and goes to the dashboard. Also offers help/recovery options.
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {

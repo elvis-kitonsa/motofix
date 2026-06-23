@@ -1,3 +1,6 @@
+// ChangePassword.tsx — lets a logged-in provider set a new password (e.g. after first login
+// with a temporary one). Validates the new password and saves it via mechanicService.
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, Eye, EyeOff, ShieldCheck, Loader2, KeyRound } from 'lucide-react'

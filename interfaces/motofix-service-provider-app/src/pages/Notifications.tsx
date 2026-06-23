@@ -1,3 +1,6 @@
+// Notifications.tsx — the mechanic's notifications inbox: job offers, payments, ratings and
+// system messages, with read/unread state and clear actions.
+
 import { useState, useEffect, useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {

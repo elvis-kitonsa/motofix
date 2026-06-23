@@ -1,3 +1,6 @@
+// TopBar.tsx — the bar across the top of every admin page: search, refresh, theme toggle,
+// the notifications bell, and the admin account menu (profile/settings/logout).
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Search, ChevronDown, RefreshCw, User, Settings, ShieldCheck, ActivitySquare, Sun, Moon } from 'lucide-react';

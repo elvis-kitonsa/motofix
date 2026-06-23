@@ -1,3 +1,8 @@
+// config/health.ts — developer debugging helpers (not used in the normal app flow).
+// checkServiceHealth() pings the auth and requests services to see if they're up,
+// and testAuthEndpoint() tries the send-OTP call. Handy when something isn't working
+// and you want to confirm the backend is reachable; results are printed to the console.
+
 import axios from 'axios';
 import { AUTH_BASE_URL, REQUESTS_BASE_URL } from './api';
 

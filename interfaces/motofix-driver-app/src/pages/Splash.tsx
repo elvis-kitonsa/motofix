@@ -1,3 +1,7 @@
+// Splash.tsx — the first screen on app open: a short branded animation (the `Phase`
+// states below step through the logo reveal), then it sends the user onward (to the
+// welcome/login flow, or straight in if already signed in).
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';

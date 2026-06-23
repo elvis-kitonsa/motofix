@@ -1,3 +1,8 @@
+// types/index.ts — shared TypeScript types for the provider app. These describe the
+// shapes of the core things the app deals with (a provider, a job and its status, etc.)
+// so screens and the API layer all agree on the same structure. Start here to learn the
+// app's vocabulary.
+
 export type ProviderType = 'mechanic' | 'towing_provider'
 
 export type JobStatus =
@@ -66,6 +71,7 @@ export interface ServiceRequest {
   location_lng?: number
   price_estimate?: number
   actual_fee?: number
+  service_note?: string
   payment_status?: string
   created_at: string
   accepted_at?: string

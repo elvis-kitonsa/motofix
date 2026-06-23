@@ -1,3 +1,7 @@
+// ReminderSettings.tsx — lets the driver configure the maintenance reminders: turn them
+// on/off, choose which day/time they fire, and grant notification permission. The
+// scheduler (useReminderScheduler) obeys whatever is set here.
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Bell, BellOff, Sun, CalendarDays, Send, Info } from 'lucide-react';

@@ -1,3 +1,6 @@
+// NavLink.tsx — a thin wrapper around react-router's NavLink that accepts plain
+// activeClassName / pendingClassName strings for styling the link to the current page.
+
 import { NavLink as RouterNavLink, NavLinkProps } from "react-router-dom";
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";

@@ -1,11 +1,24 @@
 # app/storage.py
 """
-Cloud storage utilities for uploading media files.
-Supports both AWS S3 and Cloudinary.
+Handles saving the media files drivers attach to a request — voice notes, fault
+photos, documents — and giving back a public URL the apps can display.
+
+There are three places we can save to, and we pick one automatically:
+  • Cloudinary  — the default cloud image/file host.
+  • AWS S3      — used instead if STORAGE_PROVIDER=s3.
+  • Local disk  — a safety net used only when no cloud credentials are set, so
+                  uploads still work during local development instead of failing.
+
+Every option exposes the same `upload_file(...)` method returning the same shape
+({url, file_type, size_kb, uploaded_at}), so the rest of the app doesn't care which
+one is active. Use get_storage() at the bottom to obtain the right one.
 """
 
 import os
+import time
+import shutil
 import logging
+from datetime import datetime, timezone
 from typing import Optional, BinaryIO
 from pathlib import Path
 import boto3
@@ -192,9 +205,41 @@ class S3Storage:
             raise StorageError(f"Failed to upload to S3: {str(e)}")
 
 
+class LocalStorage:
+    """Disk-backed fallback used when no cloud provider (Cloudinary/S3) is
+    configured, so media uploads still work out of the box. Files are saved to a
+    served directory; the dispatch service exposes them at /media. The returned URL
+    is absolute, built from DISPATCH_PUBLIC_URL — set that to the host the driver/
+    mechanic apps reach (e.g. http://192.168.1.3:8001) so phones can load images."""
+
+    def __init__(self):
+        self.media_dir = Path(os.getenv("MEDIA_DIR", "/app/media"))
+        self.media_dir.mkdir(parents=True, exist_ok=True)
+        self.base = os.getenv("DISPATCH_PUBLIC_URL", "http://localhost:8001").rstrip("/")
+        logger.info("Local disk storage initialized at %s (public base %s)", self.media_dir, self.base)
+
+    async def upload_file(self, file_path: str, file_type: str, request_id: str) -> dict:
+        src = Path(file_path)
+        ext = src.suffix or (".jpg" if file_type == "photo" else "")
+        name = f"{file_type}_{request_id}_{int(time.time() * 1000)}{ext}"
+        dest = self.media_dir / name
+        shutil.copyfile(src, dest)
+        size_kb = round(dest.stat().st_size / 1024, 1)
+        return {
+            "url": f"{self.base}/media/{name}",
+            "file_type": file_type,
+            "size_kb": size_kb,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+
 def get_storage():
-    """Factory function to get appropriate storage provider"""
-    if STORAGE_PROVIDER == "s3":
-        return S3Storage()
-    else:
+    """Return the configured storage provider, falling back to local disk when no
+    cloud credentials are present (so media uploads never silently no-op)."""
+    try:
+        if STORAGE_PROVIDER == "s3":
+            return S3Storage()
         return CloudinaryStorage()
+    except StorageError as e:
+        logger.warning("Cloud storage unavailable (%s) — using local disk fallback", e)
+        return LocalStorage()

@@ -36,14 +36,17 @@ export const API_CONFIG = {
  * - 12500 -> "UGX 12.5K"
  * - 350 -> "UGX 350"
  */
-export const formatUGX = (amount: number): string => {
-  if (amount >= 1000000) {
-    return `UGX ${(amount / 1000000).toFixed(1)}M`;
+export const formatUGX = (amount?: number | null): string => {
+  // Guard against undefined/null/NaN stats so a missing value can never crash a
+  // render (an unguarded amount.toLocaleString() white-screened the dashboard).
+  const n = typeof amount === 'number' && isFinite(amount) ? amount : 0;
+  if (n >= 1000000) {
+    return `UGX ${(n / 1000000).toFixed(1)}M`;
   }
-  if (amount >= 1000) {
-    return `UGX ${(amount / 1000).toFixed(1)}K`;
+  if (n >= 1000) {
+    return `UGX ${(n / 1000).toFixed(1)}K`;
   }
-  return `UGX ${amount.toLocaleString()}`;
+  return `UGX ${n.toLocaleString()}`;
 };
 
 /**

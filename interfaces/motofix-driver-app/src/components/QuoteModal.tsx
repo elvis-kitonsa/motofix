@@ -1,3 +1,8 @@
+// QuoteModal.tsx — RETIRED. This was the old pop-up where the driver approved a price
+// quote and paid. It's been replaced by the in-job FinalPaymentFlow (see RequestDetail)
+// and is no longer rendered in App.tsx. Kept for reference; safe to delete once you've
+// confirmed nothing imports it.
+
 import { useState, useEffect, useRef } from 'react';
 import {
   DollarSign, Check, X, Loader2, Smartphone,

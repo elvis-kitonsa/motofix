@@ -1,3 +1,8 @@
+// ThemeContext.tsx — app-wide light/dark mode.
+// Any component can call useTheme() to read the current theme or flip it. The choice
+// is saved in the browser (localStorage) so it sticks between visits, and is applied
+// by adding a "light"/"dark" class to the page's root element (CSS does the rest).
+
 import { createContext, useContext, useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light';

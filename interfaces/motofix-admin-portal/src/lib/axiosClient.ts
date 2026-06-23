@@ -1,3 +1,11 @@
+// lib/axiosClient.ts — the pre-configured HTTP clients the admin portal uses.
+//
+// One client per backend service it talks to: requestsClient (dispatch service),
+// mechanicsClient, and authClient (driver accounts). Each automatically attaches the
+// admin's saved login token to every request, so individual API calls don't have to.
+// Import the right client here (or use the helpers in lib/api.ts) rather than calling
+// axios directly. Note the admin token is stored under 'motofix_admin_token'.
+
 import axios from 'axios';
 import { API_CONFIG } from '@/config/api';
 

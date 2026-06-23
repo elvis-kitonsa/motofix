@@ -1,3 +1,7 @@
+// DriverChat.tsx — the live two-way chat between the driver and their assigned mechanic
+// for a specific job (text, voice notes, photos). Messages are saved on the server and
+// delivered in real time via the WebSocket. Different from FaultChat, which is the AI bot.
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Send, Mic, Paperclip, Camera, Play, Pause, X, Check, Loader2, Trash2 } from 'lucide-react'

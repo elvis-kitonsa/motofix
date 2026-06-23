@@ -1,3 +1,24 @@
+// RequestContext.tsx — the shared store of the driver's service requests.
+//
+// A React "context" is app-wide shared state: any page can call useRequests() to
+// read the driver's requests instead of each page fetching its own copy. This one
+// is the source of truth for "what jobs do I have and what's happening with them".
+//
+// How it stays up to date (three layers, most-live first):
+//   1. WebSocket — the server pushes events the instant something changes (mechanic
+//      accepted, is en route, moved on the map, finished). Handled in the WS effect.
+//   2. REST fetch — fetchAll() pulls the full list from the server (on load, on login
+//      change, and after each WS event) as the reliable snapshot.
+//   3. Polling fallback — if the WebSocket never connects within 15s, we poll every
+//      10s instead, so updates still arrive on a bad connection.
+//
+// Two subtleties worth knowing:
+//   • "Optimistic cancel": when the driver cancels, we flip the status locally right
+//     away (markCancelled) and refuse to let a stale server snapshot revert it until
+//     the server confirms — so the UI never flickers back to "active".
+//   • Live mechanic position (mechanic_lat/lon) only exists in WebSocket messages, not
+//     in the REST snapshot, so applyUpdates carefully preserves it across refreshes.
+
 import React, {
   createContext,
   useContext,
@@ -71,7 +92,10 @@ const STATUS_MESSAGES: Record<string, string> = {
   arrived: '📍 Your mechanic has arrived!',
   service_started: '🛠️ Service has started!',
   completed: '✅ Your request has been completed!',
-  cancelled: '❌ Your request was cancelled',
+  // Only ever shown for an EXTERNAL cancellation: the driver's own cancels are recorded
+  // in previousStatusesRef (by markCancelled) so they never re-fire a toast here. In this
+  // app an external cancel means the mechanic pulled out, so we name them.
+  cancelled: '❌ Your mechanic cancelled this request',
 };
 
 export function RequestProvider({ children }: { children: React.ReactNode }) {
@@ -246,6 +270,11 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
               if (rid !== pid) return r;
               // Never override a request the user just cancelled — wait for applyUpdates
               if (localCancelledRef.current.has(rid)) return r;
+              // The backend bundles a full request snapshot with status_update —
+              // pull the mechanic's final charge + what-was-fixed (and journey
+              // fields) from it so the driver sees the AGREED figure live, before
+              // confirming the job is done.
+              const snap = (payload.request as Record<string, unknown> | undefined);
               const updated: Request = {
                 ...r,
                 status: (payload.status as string) ?? r.status,
@@ -253,6 +282,10 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
                 mechanic_name: (payload.mechanic_name as string) ?? r.mechanic_name,
                 mechanic_lat: (payload.mechanic_lat as number) ?? r.mechanic_lat,
                 mechanic_lon: (payload.mechanic_lon as number) ?? r.mechanic_lon,
+                actual_fee:    (snap?.actual_fee as number | null | undefined) ?? r.actual_fee,
+                service_note:  (snap?.service_note as string | null | undefined) ?? r.service_note,
+                completion_by: (snap?.completion_by as Request['completion_by']) ?? r.completion_by,
+                eta_minutes:   (snap?.eta_minutes as number | undefined) ?? r.eta_minutes,
               };
               // Fire toast if status changed
               const prev = previousStatusesRef.current.get(rid);
@@ -304,6 +337,19 @@ export function RequestProvider({ children }: { children: React.ReactNode }) {
     }, 15_000);
     return () => clearTimeout(check);
   }, [fetchAll]);
+
+  // Active-request watchdog (mirror of the mechanic app's). The WebSocket already pushes
+  // a mechanic cancellation instantly; this is the BACKUP for when that event is missed
+  // (socket drop / app backgrounded): while any request is still live we re-fetch on a
+  // steady cadence, so the cancellation lands within ~10s regardless of the socket. The
+  // status-change toast ("Your mechanic cancelled this request") fires from applyUpdates,
+  // and previousStatusesRef dedupes it so the WS and this poll can't double-notify.
+  const hasLiveRequest = requests.some(r => r.status !== 'completed' && r.status !== 'cancelled');
+  useEffect(() => {
+    if (!hasLiveRequest) return;
+    const interval = setInterval(() => fetchAll(false), 10_000);
+    return () => clearInterval(interval);
+  }, [hasLiveRequest, fetchAll]);
 
   const refresh = useCallback(() => fetchAll(false), [fetchAll]);
 

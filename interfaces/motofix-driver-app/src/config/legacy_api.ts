@@ -1,3 +1,8 @@
+// config/legacy_api.ts — OLD version of the API setup, kept for reference only.
+// The app now uses ./api.ts (which routes through the dev proxy and has the full set
+// of services). Prefer api.ts for anything new; this file can be deleted once you've
+// confirmed nothing still imports it.
+
 import axios from "axios";
 
 // Base URLs for microservices

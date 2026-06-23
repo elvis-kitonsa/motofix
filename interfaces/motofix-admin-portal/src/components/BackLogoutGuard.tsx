@@ -1,3 +1,6 @@
+// BackLogoutGuard.tsx — traps the browser Back button so an admin doesn't accidentally
+// leave the portal; instead it asks whether they want to log out. Staying keeps the session.
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clearAuthToken } from '@/lib/api';

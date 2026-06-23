@@ -1,8 +1,21 @@
 """
-AI diagnosis logic.
-  - Fault diagnosis (text + image): Claude Haiku 4.5 via the Anthropic SDK.
-  - Chatbot / guided triage / parts pricing / fuel advisor: Groq (llama-3.3-70b-versatile,
-    llama-3.2-90b-vision-preview).
+AI diagnosis logic — this is the "brain" behind MOTOBOT and the auto-diagnosis features.
+
+Everything here talks to an AI model and turns the reply into something our app can use.
+We use TWO different AI providers, each for what it's best at:
+
+  - Claude (Anthropic)  → fault diagnosis from text or a photo, and the MOTOBOT chat.
+                          These need careful judgement, so we use the stronger model.
+  - Groq (Llama models) → faster/cheaper helpers: the step-by-step question flow,
+                          spare-parts pricing, the fuel advisor, voice-note transcription,
+                          and the rotating home-screen greetings.
+
+How most functions work, in three steps:
+  1. Build a "system prompt" (the big triple-quoted strings below) telling the AI exactly
+     how to behave and what JSON shape to return.
+  2. Send it the driver's input and get a reply.
+  3. Parse the reply (usually JSON) into a tidy result. If anything fails, we return a
+     safe "fallback" so the app never crashes just because the AI is unavailable.
 """
 
 import base64
@@ -659,6 +672,11 @@ async def diagnose_image(image_bytes: bytes, content_type: str, client: AsyncGro
         "shot from a DIFFERENT ANGLE, closer and in good light (e.g. \"I can see it's your front bumper but the "
         "photo is blurry — please take another, closer shot from a different angle so I can assess it properly.\"). "
         "In that case set repair_or_replace=\"inspect\". If the photo is clear enough to judge, set needs_better_photo=false.\n"
+        "  IMPORTANT: a merely imperfect angle or distance is NOT a reason to ask for another photo or to pick "
+        "\"inspect\" if the damage you CAN see is already obviously severe. If the part is plainly destroyed — a "
+        "shredded/burst/flat-and-gashed tyre, a split sidewall, shattered glass, a bent/cracked rim, a deeply "
+        "crumpled panel — you have MORE than enough to make the call: set needs_better_photo=false and give a "
+        "decisive verdict. Only ask for a better photo when you cannot tell how SEVERE the damage is.\n"
         "\nREPAIR-VS-REPLACE VERDICT (when image_relevant=true): look hard at how BAD the visible damage is "
         "and make a decisive call. Return two more fields, \"repair_or_replace\" and \"repair_or_replace_reason\":\n"
         "  • \"repair\"  — the damage looks superficial/minor and an on-site fix will genuinely HOLD (e.g. a small "
@@ -670,7 +688,13 @@ async def diagnose_image(image_bytes: bytes, content_type: str, client: AsyncGro
         "radiator, a snapped suspension arm, a deeply crumpled panel). When you choose replace you MUST set "
         "repair_fee_min AND repair_fee_max to 0, and required_parts MUST list the part(s) needed — never dangle a "
         "cheap fix that will fail.\n"
-        "  • \"inspect\" — the photo honestly can't settle it (bad angle, dirt, lighting); the mechanic confirms on arrival.\n"
+        "  • \"inspect\" — LAST RESORT ONLY: use this just when the photo genuinely cannot reveal the SEVERITY "
+        "(the damaged area is hidden/obstructed, or it is too blurry/dark to see the damage at all). Do NOT pick "
+        "inspect merely because the angle or distance isn't perfect — if the damage is clearly visible, commit to "
+        "repair or replace.\n"
+        "  STRONGLY PREFER A DECISIVE repair/replace verdict — drivers act on it. Obvious, clearly-visible severe "
+        "damage is \"replace\"; an obvious minor issue is \"repair\". Only fall back to \"inspect\" when you truly "
+        "cannot read the severity from the photo.\n"
         "  Set repair_or_replace_reason to ONE short, specific sentence grounded in what is actually visible "
         "(e.g. \"The sidewall is split — a plug won't hold, so the tyre needs replacing.\"). Be honest: if a repair "
         "truly won't last, say replace even though it costs more — a fix that fails on the road is worse.\n"
@@ -802,11 +826,16 @@ async def chat_diagnose(messages: List[ChatMessage], client: AsyncGroq | None = 
             messages=convo,
         )
         raw_reply = _claude_text(resp)
+        # The system prompt tells MOTOBOT to end every reply with "DIAGNOSIS_READY: true"
+        # once it has enough info to dispatch help (or "...: false" if it needs to keep asking).
+        # We check for that marker, then strip it out so the driver never sees it.
         diagnosis_ready = "DIAGNOSIS_READY: true" in raw_reply
         clean_reply = (
             raw_reply.replace("DIAGNOSIS_READY: true", "").replace("DIAGNOSIS_READY: false", "").strip()
         )
 
+        # Once ready, feed everything the driver said into the proper diagnosis engine
+        # to get the structured result (fault category, severity, who to send, etc.).
         diagnosis = None
         if diagnosis_ready:
             user_context = " ".join(m.content for m in messages if m.role == "user")

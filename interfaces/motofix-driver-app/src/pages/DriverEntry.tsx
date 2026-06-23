@@ -1,3 +1,6 @@
+// DriverEntry.tsx — the "you're entering as a driver" gateway screen where the user
+// chooses to log in or sign up before reaching the driver app proper.
+
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RotateCcw, Sparkles, ShieldCheck } from "lucide-react";
 

@@ -1,3 +1,7 @@
+// MechanicsManagement.tsx — SUPERSEDED / not currently routed. An older mechanics CRUD
+// screen (add/edit/delete); the live equivalent is Providers.tsx. Kept for reference —
+// safe to remove once confirmed nothing depends on it.
+
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';

@@ -1,3 +1,6 @@
+// tabs/Jobs.tsx — the Jobs tab: lists the mechanic's jobs (available nearby, active, and
+// completed history) using JobCard, and opens job details. One of the dashboard's bottom-nav tabs.
+
 import { useState, useEffect, useRef } from 'react'
 import {
   PowerOff, CheckCircle, Navigation2, ChevronRight,

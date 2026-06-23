@@ -1,3 +1,16 @@
+// config/api.ts — the single place the provider app talks to the backend.
+//
+// Layout (same idea as the other apps):
+//   • One base URL per backend service (auth, mechanics, requests, diagnosis, subscriptions);
+//     empty string = go through the Vite dev proxy in development.
+//   • withAuth() wraps each axios instance so it (a) attaches the provider's login token
+//     automatically, (b) keeps the device clock synced for the journey sim, and (c) auto
+//     logs out + redirects to /login if the server ever returns 401 (token expired/invalid).
+//   • normalizeRequest() converts a raw backend request object into our tidy ServiceRequest
+//     shape (e.g. mapping the backend 'service_started' status to the UI's 'in_progress',
+//     and splitting a "lat,lng" string into numbers).
+//   • The exported service objects below are the functions the screens actually call.
+
 import axios from 'axios'
 import type { AxiosInstance } from 'axios'
 import { noteServerDate } from '@/utils/serverClock'
@@ -11,8 +24,10 @@ const REQUESTS_URL       = import.meta.env.VITE_API_REQUESTS_URL       ?? ''
 const DIAGNOSIS_URL      = import.meta.env.VITE_API_DIAGNOSIS_URL      ?? ''
 const SUBSCRIPTIONS_URL  = import.meta.env.VITE_API_SUBSCRIPTIONS_URL  ?? ''
 
+// Adds the shared request/response behaviour to an axios instance (token + clock + 401 handling).
 function withAuth(instance: AxiosInstance): AxiosInstance {
   instance.interceptors.request.use(cfg => {
+    // Attach the saved provider token as a Bearer token so the backend knows who we are.
     const token = localStorage.getItem('motofix_sp_token')
     if (token) cfg.headers.Authorization = `Bearer ${token}`
     return cfg
@@ -77,6 +92,8 @@ export function normalizeRequest(raw: Record<string, unknown>): ServiceRequest {
     completed_at:       raw.completed_at        ? String(raw.completed_at)       : undefined,
     completed_time:     raw.completed_at        ? String(raw.completed_at)       : undefined,
     eta_minutes:        raw.eta_minutes != null ? Number(raw.eta_minutes)        : undefined,
+    actual_fee:         raw.actual_fee != null  ? Number(raw.actual_fee)         : undefined,
+    service_note:       raw.service_note        ? String(raw.service_note)       : undefined,
   }
 }
 
@@ -145,6 +162,29 @@ export const mechanicService = {
 }
 
 // ── Jobs (port 8001 for accept/status; port 8002 for current job) ─────────────
+
+// Admin-managed spare-parts dealer directory (dispatch service) — the businesses
+// the mechanic's Spare Parts shop sources suppliers from (Places used as fallback).
+export interface DirectoryDealer {
+  id: number
+  name: string
+  phone: string
+  address: string
+  location: string
+  latitude: number | null
+  longitude: number | null
+  specialty: string
+  description: string
+  verified: boolean
+  distance_km: number | null
+}
+
+export const dealerService = {
+  searchNearby: (lat: number, lng: number, radiusKm = 30) =>
+    requestsApi.get<{ total: number; dealers: DirectoryDealer[] }>('/dealers/search', {
+      params: { lat, lon: lng, radius_km: radiusKm },
+    }),
+}
 
 export const jobService = {
   getActive: async (): Promise<{ data: ServiceRequest[] }> => {

@@ -1,3 +1,6 @@
+// PageSkeleton.tsx — grey placeholder boxes shown while a page's data is still loading,
+// so the layout doesn't jump around when the real content arrives.
+
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface PageSkeletonProps {

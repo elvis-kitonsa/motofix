@@ -1,3 +1,16 @@
+// App.tsx — the root of the service-provider (mechanic / tow provider) app.
+//
+// It maps URLs to pages in <Routes> and wraps everything in providers (outer→inner):
+//   Theme (light/dark) → Auth (who's logged in). The live WebSocket is only opened
+//   inside the logged-in area (see ProtectedArea), so public screens don't connect.
+//
+// Route protection:
+//   • <ProtectedRoute> — requires the provider to be logged in.
+//   • <ProtectedArea> — ProtectedRoute PLUS the WebSocketProvider, used for screens that
+//     need live job updates (dashboard, chat, notifications).
+//   • RootRedirect — sends "/" to the dashboard if a token exists, else the intro flow.
+// The provider's login token is stored under 'motofix_sp_token' (sp = service provider).
+
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'

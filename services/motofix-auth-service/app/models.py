@@ -1,6 +1,15 @@
 # app/models.py
-# SQLAlchemy ORM models for all auth-service tables.
-# Used by Alembic for migrations. Runtime queries use raw asyncpg via main.py pool.
+# Defines every database TABLE this service owns, described as Python classes.
+# (This style — one class per table — is called an "ORM model", using SQLAlchemy.)
+#
+# These classes are the single source of truth for the table layout, and Alembic
+# reads them to build/upgrade the real database (the "migrations").
+# IMPORTANT: the live app does NOT query through these classes at runtime — it runs
+# raw SQL directly via asyncpg in main.py. So treat this file as the blueprint of
+# what columns exist, not as how data is fetched.
+#
+# Quick tour of the tables: users (drivers), mechanics, towing_providers, admins,
+# system_logs (audit trail), otp_store (one-time codes), token_blacklist (logged-out tokens).
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, Float,

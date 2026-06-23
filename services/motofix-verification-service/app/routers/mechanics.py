@@ -1,4 +1,7 @@
 # app/routers/mechanics.py
+# Endpoints for listing and managing mechanic records. The most important one is the
+# "list mechanics" query the matching service calls (it can filter to verified-only and
+# available-only) to find candidates for a breakdown. Also supports create/update/lookup.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional

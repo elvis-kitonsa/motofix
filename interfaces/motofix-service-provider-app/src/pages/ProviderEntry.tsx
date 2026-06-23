@@ -1,3 +1,6 @@
+// ProviderEntry.tsx — the "get started" gateway ("/entry") where a provider chooses to log in
+// (existing mechanic) or apply (new applicant).
+
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, LogIn, ClipboardList, Wrench } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'

@@ -1,3 +1,7 @@
+// MechanicFormDialog.tsx — the add/edit-mechanic popup form. Used for both creating a new
+// mechanic and editing an existing one; the form fields are validated (react-hook-form + zod)
+// before saving via the lib/api mechanic functions.
+
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';

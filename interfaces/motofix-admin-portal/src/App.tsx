@@ -1,3 +1,12 @@
+// App.tsx — the root of the admin portal (the control room web app).
+//
+// It maps each URL to a page in <Routes> (dashboard, requests, providers, drivers,
+// payments, applications, spare parts, etc.) and wraps everything in shared providers:
+//   • ThemeProvider — light/dark mode
+//   • QueryClientProvider — React Query, which fetches + caches server data so screens
+//     stay fast and don't re-fetch on every navigation (see the staleTime/gcTime below)
+// New admin screen? Add its import and a <Route> here.
+
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

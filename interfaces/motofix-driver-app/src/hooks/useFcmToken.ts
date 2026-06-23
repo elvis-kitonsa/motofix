@@ -1,3 +1,10 @@
+// useFcmToken.ts — registers this device to receive push notifications.
+//
+// Once the user is logged in, it asks for notification permission and, if granted,
+// gets a unique "FCM token" from Firebase that identifies this device. That token is
+// sent to our backend so the server can push alerts (e.g. "your mechanic has arrived")
+// straight to the phone. Does nothing if push isn't configured or permission is denied.
+
 import { useEffect } from 'react'
 import { getToken } from 'firebase/messaging'
 import { getFirebaseMessaging, VAPID_KEY } from '@/lib/firebase'

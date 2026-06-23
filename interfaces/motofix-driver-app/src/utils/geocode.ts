@@ -1,3 +1,8 @@
+// utils/geocode.ts — turns GPS coordinates into a readable address ("reverse geocoding"),
+// using Google Maps in the browser. Results are cached in memory (per page load) so we
+// don't look up the same spot repeatedly. waitForGoogle() handles the case where the
+// Google Maps script hasn't finished loading yet, giving up after a short timeout.
+
 // Cleared on every page load — prevents stale cached junk addresses surviving across sessions
 const geocodeCache = new Map<string, string | null>();
 

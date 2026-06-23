@@ -1,3 +1,6 @@
+// TermsConditions.tsx — the static terms & conditions screen for providers (the rules of
+// working through MOTOFIX). Content only, no logic.
+
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { ElementType } from 'react'
 import {

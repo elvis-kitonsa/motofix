@@ -1,3 +1,6 @@
+// Login.tsx — driver sign-in by phone number + OTP. Enter the phone, receive a one-time
+// code by SMS, type it in, and you're logged in. New numbers are routed to Signup.
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Phone, KeyRound, ArrowRight, Loader2, ArrowLeft, Lock } from 'lucide-react';

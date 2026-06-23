@@ -1,3 +1,6 @@
+// tabs/RatingsView.tsx — shows the mechanic their customer ratings and reviews (their star
+// average and individual feedback), so they can see how they're doing. Opened from the Home tab.
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import {

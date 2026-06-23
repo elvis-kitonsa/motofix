@@ -1,6 +1,12 @@
 # app/services/otp.py
-# OTP generation, storage and validation.
-# Uses the raw asyncpg connection passed in from the router.
+# Handles the one-time codes used to verify a phone number at sign-up/login.
+# (OTP = "One-Time Password" — the 6-digit code texted to the phone to prove the
+# person actually owns that number.)
+#
+# The three steps: generate_otp() makes the code, store_otp() saves it with a
+# 5-minute expiry, and verify_otp() checks what the user typed — allowing only a
+# few wrong tries before the code is thrown away.
+# Uses the raw asyncpg connection (database link) passed in from the router.
 
 import secrets
 import logging

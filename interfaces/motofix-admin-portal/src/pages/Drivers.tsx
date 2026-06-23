@@ -1,3 +1,6 @@
+// Drivers.tsx — the admin list of all registered drivers (searchable table), each linking
+// through to their detail page. The driver-management entry point.
+
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';

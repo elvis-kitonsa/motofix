@@ -1,8 +1,28 @@
-import { useState, useRef, useEffect } from 'react'
+// DiagnosticTool.tsx — the mechanic's AI helper (MOTOBOT in "mechanic" mode): a chat where
+// they can describe a fault or send a photo and get detailed, technical repair guidance, plus
+// a suggested fair price. Aimed at a pro, so it's more in-depth than the driver's chat.
+
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Send, Camera, X, Stethoscope, ChevronRight } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { diagnosisService, suggestPrice } from '@/config/api'
 import type { ChatMsg } from '@/config/api'
+
+// Render the assistant's lightweight markdown as clean, human-readable text:
+// **bold** becomes bold, "- "/"* " bullets become "• ", headings lose their #,
+// and any stray markup characters are dropped so no raw asterisks show in chat.
+function renderRich(text: string): ReactNode {
+  const cleaned = text
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')   // ## Heading → Heading
+    .replace(/^\s*[-*]\s+/gm, '• ')       // "- item" / "* item" → "• item"
+  const segments = cleaned.split(/(\*\*[^*\n]+\*\*)/g)
+  return segments.map((seg, i) => {
+    const bold = seg.match(/^\*\*([^*\n]+)\*\*$/)
+    if (bold) return <strong key={i}>{bold[1]}</strong>
+    // strip any leftover emphasis/code markers from plain segments
+    return <span key={i}>{seg.replace(/[*_`]/g, '')}</span>
+  })
+}
 
 interface DiagnosisResult {
   fault_category?: string
@@ -157,7 +177,7 @@ export default function DiagnosticTool({ serviceType, description, onDiagnosisCo
                   border: `1px solid ${m.role === 'user' ? C.amber + '40' : C.border}`,
                   fontSize: 13, color: C.textHi, lineHeight: 1.5, whiteSpace: 'pre-wrap',
                 }}>
-                  {m.content}
+                  {m.role === 'assistant' ? renderRich(m.content) : m.content}
                 </div>
               </div>
             ))}

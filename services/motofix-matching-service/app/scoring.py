@@ -1,6 +1,12 @@
 """
 Intelligent mechanic-matching scorer.
 
+In plain words: when a driver reports a breakdown, this file decides WHICH nearby
+mechanic should be offered the job first. It gives every mechanic a score out of 100
+based on four things — do they have the right skill, are they reliable, are they
+close by, and are they well rated — then ranks them best-first. The numbers below
+(the "weights") say how much each of those four things matters.
+
 Weights mirror the production XGBoost-Monotonic matching model's learned feature
 importances (Top-1 accuracy 73%): expertise and availability dominate, with arrival
 speed deliberately secondary — so a complex breakdown isn't sent to a closer
@@ -77,7 +83,13 @@ def _capability_tier(mechanic: Dict[str, Any], service_type: str) -> int:
 # ── Individual scorers ────────────────────────────────────────────────────────
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Return the great-circle distance in km between two lat/lon points."""
+    """Return the straight-line distance in km between two map points (lat/lon).
+
+    This is the standard "haversine" formula — it measures distance across the
+    curved surface of the Earth, so it's accurate for real-world locations.
+    You don't need to understand the maths to use it: give it two points,
+    it gives you how many kilometres apart they are.
+    """
     R = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -126,14 +138,20 @@ def _specialisation_score(mechanic_specialisations: List[str], service_type: str
 
 def _rating_score(avg_rating: float, rating_count: int) -> float:
     """
-    Scale 0–5 stars to 0–100, with a Bayesian confidence damper.
-    New mechanics with no reviews get a neutral 50.
+    Turn a 0–5 star rating into a 0–100 score.
+
+    Catch: a mechanic with one 5-star review isn't as proven as one with fifty.
+    So we trust the rating more the more reviews there are. With no reviews we
+    give a neutral 50; the score only fully reflects the stars once they have
+    20+ reviews. (This "trust it more as evidence grows" idea is what the term
+    "Bayesian confidence damper" refers to.)
     """
     if rating_count == 0:
         return 50.0
     raw = (avg_rating / 5.0) * 100.0
-    # Blend with neutral 50 when count is low (full confidence at 20+ reviews)
+    # confidence goes from 0 (no reviews) up to 1.0 (20+ reviews).
     confidence = min(1.0, rating_count / 20.0)
+    # Mix the real star score with a neutral 50 based on how much we trust it.
     return confidence * raw + (1.0 - confidence) * 50.0
 
 

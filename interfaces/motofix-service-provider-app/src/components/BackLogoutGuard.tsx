@@ -1,3 +1,6 @@
+// BackLogoutGuard.tsx — traps the browser Back button so the mechanic doesn't accidentally
+// leave the app; instead it asks whether they want to log out. Staying keeps the session.
+
 import { useEffect, useState } from 'react'
 import { C } from '@/styles/tokens'
 

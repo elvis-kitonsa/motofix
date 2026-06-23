@@ -1,6 +1,14 @@
 # app/middleware/auth.py
 # Shared auth middleware — imported by ALL other MOTOFIX services.
 #
+# This is the "doorman" for protected endpoints. When a logged-in user makes a
+# request, their app sends a token (a JWT — a signed string proving who they are).
+# The two tools here check that token:
+#   • get_current_user — confirms the token is real, not expired, and not revoked,
+#                        then returns who the user is.
+#   • require_role     — additionally checks the user is allowed (e.g. admins only).
+# A token can be "blacklisted" when someone logs out, so an old token can't be reused.
+#
 # Self-contained: only depends on python-jose, python-dotenv, and asyncpg.
 # Other services copy this file OR install motofix-auth-service as a package.
 #

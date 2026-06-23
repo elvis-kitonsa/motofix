@@ -1,3 +1,23 @@
+# main.py — Fault Diagnosis Service (the web/API layer)
+#
+# This file exposes the AI features over HTTP. The real AI work lives in diagnosis.py;
+# here we just receive requests, check the login token where needed, call the right
+# diagnosis.py function, and return the result.
+#
+# What each endpoint is for:
+#   /diagnose          — describe a fault in text → structured diagnosis
+#   /diagnose/image    — upload a photo of the fault → diagnosis (+ repair-vs-replace)
+#   /diagnose/guided   — step-by-step Q&A for drivers who don't know what's wrong
+#   /chat , /chat/image— the MOTOBOT chat assistant (text and photo turns)
+#   /transcribe        — turn a voice note into text
+#   /parts-price       — price a list of spare parts the driver wants
+#   /fuel-advisor      — check a fuel type is safe for a given car
+#   /fuel-advisor/stations , /parts-dealers — find real nearby fuel stations / parts shops (OpenStreetMap)
+#   /greetings , /service-estimate — small AI helpers for the apps' home/completion screens
+#
+# NOTE: many AI endpoints have a "fallback" so the feature still works (with a safe
+# default) even when the AI provider is unavailable.
+
 import asyncio
 import json
 import logging
@@ -349,6 +369,8 @@ async def fuel_advisor_endpoint(
 
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    # Straight-line distance in km between two map points, used to sort the nearest
+    # fuel stations / parts shops. (Same standard "haversine" formula as elsewhere.)
     R = 6371.0
     dlat = radians(lat2 - lat1)
     dlng = radians(lng2 - lng1)

@@ -1,3 +1,7 @@
+// MechanicMatching.tsx — an explainer screen showing HOW the matching engine ranks
+// mechanics: it lays out the four scoring factors and their weights (mirroring the
+// matching-service scoring.py) so admins understand why a given mechanic is chosen.
+
 import { useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Sparkles, MapPin, Star, CheckCircle2, Trophy, Cpu, Wrench, Zap } from 'lucide-react';

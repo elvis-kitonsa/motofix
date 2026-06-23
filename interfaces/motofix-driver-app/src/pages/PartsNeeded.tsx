@@ -1,3 +1,7 @@
+// PartsNeeded.tsx — shows which spare parts a given fault needs and their price ranges
+// (admin catalog prices take priority over the AI estimate), then sends the driver on to
+// order them from a dealer. Bridges a diagnosis into the parts-shopping flow.
+
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {

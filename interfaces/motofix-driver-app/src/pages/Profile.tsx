@@ -1,3 +1,6 @@
+// Profile.tsx — the driver's account screen: view/edit their name, phone and number
+// plate, and reach related actions (settings, logout, etc.).
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 

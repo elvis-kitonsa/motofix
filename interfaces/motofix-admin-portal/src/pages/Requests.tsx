@@ -1,3 +1,6 @@
+// Requests.tsx — the admin view of all service requests: a searchable, filterable table
+// of every breakdown request and its status, with readable locations and drill-in detail.
+
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
@@ -451,6 +454,23 @@ export default function Requests() {
                 <div>
                   <p className="text-xs text-muted-foreground font-medium">ASSIGNED MECHANIC</p>
                   <p className="text-sm">{selected.mechanicName}</p>
+                </div>
+              )}
+
+              {(selected.actualFee != null || selected.serviceNote) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {selected.actualFee != null && (
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium">AGREED CHARGE</p>
+                      <p className="text-sm font-semibold">UGX {Number(selected.actualFee).toLocaleString()}</p>
+                    </div>
+                  )}
+                  {selected.serviceNote && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-muted-foreground font-medium mb-1">WORK DONE</p>
+                      <p className="text-sm bg-secondary/50 rounded-lg p-3">{selected.serviceNote}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

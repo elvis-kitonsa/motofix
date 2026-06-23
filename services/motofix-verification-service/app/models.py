@@ -1,4 +1,7 @@
-# motfix-mechanic-service: app/models.py
+# app/models.py
+# The "mechanics" table layout (one ORM class = one table). This is the blueprint of
+# what we store about each mechanic: who they are, where they are, what they specialise
+# in, whether they're available, and their rating/job history.
 
 from sqlalchemy import Column, Integer, String, Float, Boolean
 from .database import Base

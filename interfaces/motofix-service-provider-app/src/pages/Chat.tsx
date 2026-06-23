@@ -1,3 +1,7 @@
+// Chat.tsx — the live two-way chat between the mechanic and the driver for a specific job
+// (text, voice notes, photos). Messages are saved on the server and delivered in real time
+// over the WebSocket. This is the mechanic's side of the same conversation as the driver app's DriverChat.
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Send, Mic, Paperclip, Camera, Play, Pause, X, Check, Loader2, Trash2 } from 'lucide-react'

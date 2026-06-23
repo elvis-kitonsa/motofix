@@ -1,6 +1,10 @@
+// TopHeader.tsx — the bar across the top of the dashboard: the online/offline toggle, theme
+// switch, notifications bell, refresh, and the account menu (profile/logout). The online
+// toggle is what makes the mechanic available to receive jobs.
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Sun, Moon, User, LogOut, RefreshCw, Zap, PowerOff } from 'lucide-react'
+import { Bell, Sun, Moon, User, LogOut, RefreshCw, Zap, PowerOff, Lock, Wallet } from 'lucide-react'
 import { C } from '@/styles/tokens'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -11,6 +15,8 @@ interface Props {
   spn: string | null
   isAvailable: boolean
   onToggleAvailable: () => void
+  feeGated?: boolean
+  onProceedToFees?: () => void
   unreadCount: number
   onBellClick: () => void
   onAvatarClick: () => void
@@ -24,10 +30,11 @@ function initials(name: string) {
 
 export default function TopHeader({
   providerName, providerType, spn, isAvailable,
-  onToggleAvailable, unreadCount, onBellClick, onAvatarClick,
+  onToggleAvailable, feeGated, onProceedToFees, unreadCount, onBellClick, onAvatarClick,
 }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showOffline, setShowOffline] = useState(false)
+  const [showFeeWarn, setShowFeeWarn] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
@@ -36,8 +43,14 @@ export default function TopHeader({
   const navigate = useNavigate()
 
   const handleToggleClick = () => {
-    if (!isAvailable) setShowConfirm(true)   // going online → confirm
-    else setShowOffline(true)                // going offline → confirm
+    if (!isAvailable) {
+      // Going online — but if platform fees are owed past the cap, the mechanic is
+      // blocked: show the unmissable settle-fees warning instead of the ready sheet.
+      if (feeGated) setShowFeeWarn(true)
+      else setShowConfirm(true)
+    } else {
+      setShowOffline(true)                   // going offline → confirm
+    }
   }
 
   const handleConfirmYes = () => { setShowConfirm(false); onToggleAvailable() }
@@ -434,6 +447,63 @@ export default function TopHeader({
               }}
             >
               Stay Online
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Platform-fee block — shown when a gated mechanic taps "go online" ──────
+          No close button and no backdrop-dismiss: the only way forward is to pay. */}
+      {showFeeWarn && (
+        <>
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(10px)',
+            zIndex: 200,
+            animation: 'hdr-fade 0.2s ease both',
+          }} />
+          <div style={{
+            position: 'fixed', bottom: 0, left: '50%',
+            width: '100%', maxWidth: 480,
+            background: 'var(--sheet-bg)',
+            border: '1px solid var(--border-3)',
+            borderBottom: 'none',
+            borderRadius: '28px 28px 0 0',
+            padding: '32px 24px 44px',
+            zIndex: 201,
+            animation: 'hdr-sheet-in 0.35s cubic-bezier(0.34,1.3,0.64,1) both',
+          }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-4)', margin: '0 auto 28px' }} />
+
+            <div style={{ width: 72, height: 72, borderRadius: '50%', margin: '0 auto 24px', background: 'rgba(249,115,22,0.14)', border: '1.5px solid rgba(249,115,22,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Lock style={{ width: 30, height: 30, color: '#F97316' }} />
+            </div>
+
+            <h2 style={{ fontSize: 23, fontWeight: 900, color: 'var(--text-hi)', textAlign: 'center', letterSpacing: '-0.02em', marginBottom: 10 }}>
+              Settle your platform fees
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-md)', textAlign: 'center', lineHeight: 1.65, marginBottom: 32, padding: '0 6px' }}>
+              You've reached the limit of <strong style={{ color: 'var(--text-hi)' }}>3 unpaid jobs</strong>.
+              Complete your <strong style={{ color: '#F97316' }}>UGX 30,000</strong> platform-fee payment to go back online and receive new job requests.
+            </p>
+
+            <button
+              onClick={() => { setShowFeeWarn(false); onProceedToFees?.() }}
+              style={{
+                width: '100%', padding: '16px', borderRadius: 18,
+                background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                border: 'none', cursor: 'pointer',
+                fontSize: 15, fontWeight: 800, color: '#000',
+                boxShadow: '0 4px 24px rgba(245,158,11,0.30)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                transition: 'transform 0.15s ease',
+              }}
+              onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.98)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+            >
+              <Wallet style={{ width: 18, height: 18 }} />
+              Proceed to Fees Payment
             </button>
           </div>
         </>

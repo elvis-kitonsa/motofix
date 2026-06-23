@@ -1,3 +1,6 @@
+// Splash.tsx — a brief branded intro animation, then routes the admin onward (to the
+// dashboard if logged in, otherwise to login).
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isAuthenticated, getAdminInfo } from '@/lib/api';

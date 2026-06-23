@@ -1,3 +1,6 @@
+// Login.tsx — the admin sign-in screen (email + password). On success it saves the admin
+// token via lib/api and sends them to the dashboard; already-logged-in admins skip straight through.
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminLogin, isAuthenticated } from "@/lib/api";

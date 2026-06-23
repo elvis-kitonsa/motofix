@@ -1,3 +1,6 @@
+// Signup.tsx — new driver registration: collects name, phone and number plate, sends an
+// OTP to verify the phone, and creates the account once the code is confirmed.
+
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Phone, Car, ArrowRight, ArrowLeft, Loader2, KeyRound } from "lucide-react";

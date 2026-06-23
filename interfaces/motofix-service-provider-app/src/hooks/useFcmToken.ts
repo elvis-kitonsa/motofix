@@ -1,3 +1,7 @@
+// useFcmToken.ts — registers this device for push notifications once the provider is logged
+// in: asks permission, gets the device's FCM token from Firebase, and sends it to the backend
+// so the server can push job alerts (e.g. "new job nearby") to the mechanic's phone.
+
 import { useEffect } from 'react'
 import { getToken } from 'firebase/messaging'
 import { getFirebaseMessaging, VAPID_KEY } from '@/lib/firebase'

@@ -1,3 +1,6 @@
+// SkeletonCard.tsx — a grey placeholder card shown while job data is still loading, so the
+// list has shape instead of jumping when the real cards arrive.
+
 import { C } from '@/styles/tokens'
 
 interface Props {

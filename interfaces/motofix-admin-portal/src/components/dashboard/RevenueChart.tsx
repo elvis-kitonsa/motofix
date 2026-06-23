@@ -1,3 +1,6 @@
+// RevenueChart.tsx — the dashboard chart showing revenue over time (the last N days),
+// fed by fetchRevenueChart. Lets admins see earning trends.
+
 import { useState, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,

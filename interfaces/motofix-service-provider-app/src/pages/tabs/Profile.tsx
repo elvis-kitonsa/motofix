@@ -1,3 +1,6 @@
+// tabs/Profile.tsx — the Profile tab: the mechanic's own account info (name, verification
+// status, specialties, contact) plus settings and links (change password, support, logout).
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {

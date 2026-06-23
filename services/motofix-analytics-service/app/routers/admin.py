@@ -1,3 +1,12 @@
+# app/routers/admin.py
+# The admin dashboard's data endpoints — the biggest part of this service. Every
+# endpoint here is admin-only (protected by verify_admin_token) and mostly READS
+# data to build the control-room screens: platform totals, charts/trends, revenue,
+# and detailed lists of service requests, drivers and mechanics.
+#
+# It reads from two databases: get_db (this service's data) and get_auth_db (the
+# auth service's users/mechanics), so it can join the full picture together.
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import Optional, List
 from datetime import datetime
@@ -1153,6 +1162,63 @@ async def admin_notifications(
                     f"Account is active."
                 ),
                 "created_at": r["created_at"].isoformat(),
+            })
+    except Exception:
+        pass
+
+    # ── Platform-fee payments (a mechanic settled their owed balance) ─────────
+    # Paid platform_fees rows live in the dispatch DB; group them into one event per
+    # payment (same ref = one MoMo payment) so the admin sees "X paid UGX Y for N jobs".
+    try:
+        rows = await db.fetch(
+            """SELECT mechanic_id, payment_ref, request_id, amount, paid_at
+               FROM platform_fees
+               WHERE status = 'paid' AND paid_at IS NOT NULL
+               ORDER BY paid_at DESC
+               LIMIT 60"""
+        )
+        groups: dict = {}
+        for r in rows:
+            key = (r["mechanic_id"], r["payment_ref"] or r["paid_at"].isoformat())
+            g = groups.setdefault(key, {
+                "mechanic_id": r["mechanic_id"], "ref": r["payment_ref"],
+                "amount": 0, "jobs": [], "paid_at": r["paid_at"],
+            })
+            g["amount"] += int(r["amount"] or 0)
+            g["jobs"].append(int(r["request_id"]))
+            if r["paid_at"] and r["paid_at"] > g["paid_at"]:
+                g["paid_at"] = r["paid_at"]
+
+        # Resolve mechanic names from the auth DB (mechanics, then towing_providers).
+        mech_ids = list({g["mechanic_id"] for g in groups.values()})
+        names: dict = {}
+        if mech_ids:
+            try:
+                for n in await auth_db.fetch("SELECT id, name FROM mechanics WHERE id = ANY($1::int[])", mech_ids):
+                    names[n["id"]] = n["name"]
+            except Exception:
+                pass
+            try:
+                for t in await auth_db.fetch("SELECT id, full_name FROM towing_providers WHERE id = ANY($1::int[])", mech_ids):
+                    names.setdefault(t["id"], t["full_name"])
+            except Exception:
+                pass
+
+        for g in sorted(groups.values(), key=lambda x: x["paid_at"], reverse=True)[:10]:
+            name = names.get(g["mechanic_id"]) or "A mechanic"
+            n = len(g["jobs"])
+            ids = ", ".join(f"#{j}" for j in g["jobs"])
+            events.append({
+                "id":         f"feepay-{g['mechanic_id']}-{g['ref'] or g['paid_at'].isoformat()}",
+                "type":       "payment",
+                "title":      "Platform Fee Paid",
+                "body":       f"{name} paid UGX {g['amount']:,} for {n} job{'s' if n != 1 else ''}.",
+                "detail":     (
+                    f"{name} settled UGX {g['amount']:,} in platform fees covering {n} completed "
+                    f"job{'s' if n != 1 else ''} ({ids}). Payment ref {g['ref'] or '—'}. "
+                    f"The mechanic's account has been reinstated and can go online again."
+                ),
+                "created_at": g["paid_at"].isoformat(),
             })
     except Exception:
         pass
