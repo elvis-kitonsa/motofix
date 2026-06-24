@@ -114,16 +114,16 @@ export function useJobSim(opts: {
       setTick(x => x + 1)
     }
     try {
+      // IMPORTANT: request the SINGLE primary route (no alternatives). The driver and
+      // mechanic apps each make their own Directions call, and with alternatives enabled
+      // Google can return a different set/order per call, so the two apps would pick
+      // different routes and the drawn line wouldn't match. The primary route for a fixed
+      // origin→destination is deterministic, so both apps draw the identical road route.
       new g.DirectionsService().route(
-        { origin: start, destination: driver, travelMode: g.TravelMode.DRIVING, provideRouteAlternatives: true },
+        { origin: start, destination: driver, travelMode: g.TravelMode.DRIVING, provideRouteAlternatives: false },
         (result: google.maps.DirectionsResult | null, status: string) => {
           if (status === 'OK' && result?.routes?.length) {
-            let best = 0, bestM = Infinity
-            result.routes.forEach((r, i) => {
-              const m = r.legs.reduce((s, leg) => s + (leg.distance?.value ?? 0), 0)
-              if (m < bestM) { bestM = m; best = i }
-            })
-            const path: LL[] = (result.routes[best]?.overview_path ?? []).map(
+            const path: LL[] = (result.routes[0]?.overview_path ?? []).map(
               (p: google.maps.LatLng) => ({ lat: p.lat(), lng: p.lng() }),
             )
             metaRef.current = path.length >= 2 ? buildRouteMeta(path) : buildRouteMeta([start, driver])
