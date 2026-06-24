@@ -47,10 +47,10 @@ interface ProviderRow {
 }
 
 function toRow(m: Mechanic): ProviderRow {
-  return { id: m.id, type: 'mechanic', name: m.name, phone: m.phone, location: m.location, verified: m.verified, joinedAt: m.joinedAt, isBanned: m.isBanned, banReason: m.banReason, rating: m.rating, jobsCompleted: m.jobsCompleted, _raw: m };
+  return { id: m.id, type: 'mechanic', name: m.name, phone: m.phone, location: m.location, verified: m.verified, joinedAt: m.joinedAt, isBanned: m.isBanned, banReason: m.banReason, rating: m.rating, jobsCompleted: m.jobsCompleted, available: m.available, _raw: m };
 }
 function toTowingRow(t: TowingProvider): ProviderRow {
-  return { id: t.id, type: 'towing', name: t.name, phone: t.phone, location: t.location, verified: t.verified, joinedAt: t.joinedAt, isBanned: t.isBanned, banReason: t.banReason, spn: t.spn, available: t.available, _raw: t };
+  return { id: t.id, type: 'towing', name: t.name, phone: t.phone, location: t.location, verified: t.verified, joinedAt: t.joinedAt, isBanned: t.isBanned, banReason: t.banReason, rating: t.rating, jobsCompleted: t.jobsCompleted, spn: t.spn, available: t.available, _raw: t };
 }
 
 // Shows a "Reinstate" action only for mechanics currently suspended for repeated
@@ -274,27 +274,16 @@ export default function Providers() {
     {
       id: 'details',
       header: 'Details',
+      // Same for every provider type (mechanic or towing): star rating + jobs done.
       cell: ({ row }) => {
-        if (row.original.type === 'mechanic') {
-          return (
-            <div className="flex items-center gap-3 text-sm">
-              <span className="flex items-center gap-1">
-                <Star size={13} className="text-yellow-400 fill-yellow-400" />
-                {row.original.rating?.toFixed(1) ?? '—'}
-              </span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{row.original.jobsCompleted ?? 0} jobs</span>
-            </div>
-          );
-        }
         return (
-          <div className="flex items-center gap-2 text-sm">
-            {row.original.spn
-              ? <span className="font-mono text-primary">{row.original.spn}</span>
-              : <span className="text-muted-foreground">No SPN</span>}
-            <Badge variant={row.original.available ? 'success' : 'secondary'} className="text-xs">
-              {row.original.available ? 'Online' : 'Offline'}
-            </Badge>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="flex items-center gap-1">
+              <Star size={13} className="text-yellow-400 fill-yellow-400" />
+              {row.original.rating?.toFixed(1) ?? '0.0'}
+            </span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">{row.original.jobsCompleted ?? 0} jobs</span>
           </div>
         );
       },
@@ -315,6 +304,11 @@ export default function Providers() {
             />
             <Badge variant={row.original.verified ? 'success' : 'secondary'}>
               {row.original.verified ? 'Verified' : 'Unverified'}
+            </Badge>
+            {/* Online/Offline shown for every provider type (was previously only in
+                the towing providers' Details cell). */}
+            <Badge variant={row.original.available ? 'success' : 'outline'} className="text-xs">
+              {row.original.available ? 'Online' : 'Offline'}
             </Badge>
           </div>
         );
