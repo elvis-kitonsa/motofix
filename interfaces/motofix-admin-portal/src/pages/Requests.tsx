@@ -8,7 +8,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import ReadableLocation from '@/components/ReadableLocation';
 import { DataTable } from '@/components/table/DataTable';
 import { Badge } from '@/components/ui/badge';
-import { fetchPublicRequests, ServiceRequest } from '@/lib/api';
+import { fetchPublicRequests, fetchMechanics, fetchTowingProviders, ServiceRequest } from '@/lib/api';
 import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { MapPin, User, Wrench, FileAudio, Image as ImageIcon, FileText, Search, X, CalendarRange, ChevronDown, Clock } from 'lucide-react';
@@ -153,9 +153,34 @@ export default function Requests() {
     staleTime: 30000,
   });
 
+  // The request only carries the mechanic's id, so we load the provider directory once
+  // and look up each id → name (mechanics and towing providers both), giving the table a
+  // real "who worked on this" name instead of a bare number.
+  const { data: mechData } = useQuery({
+    queryKey: ['providers', 'mechanics-all'],
+    queryFn: () => fetchMechanics({ page: 1, pageSize: 200 }),
+    staleTime: 60000,
+  });
+  const { data: towData } = useQuery({
+    queryKey: ['providers', 'towing-all'],
+    queryFn: () => fetchTowingProviders({ page: 1, pageSize: 200 }),
+    staleTime: 60000,
+  });
+  const providerNames = useMemo(() => {
+    const m = new Map<string, string>();
+    // Towing first, then mechanics, so a mechanic wins if an id ever appears in both.
+    (towData?.data || []).forEach(p => m.set(String(p.id), p.name));
+    (mechData?.data || []).forEach(p => m.set(String(p.id), p.name));
+    return m;
+  }, [mechData, towData]);
+
   // Client-side filters on top of server-side status/search
   const displayData = useMemo(() => {
-    let rows = (data?.data || []) as RequestWithMedia[];
+    let rows = (data?.data || []).map(r => ({
+      ...r,
+      // Fill in the mechanic's name from the directory when the request only had an id.
+      mechanicName: r.mechanicName || (r.mechanicId != null ? providerNames.get(String(r.mechanicId)) : undefined),
+    })) as RequestWithMedia[];
 
     // Status filter — applied client-side so it works even if the backend hasn't filtered yet
     if (status !== 'all') {
@@ -187,7 +212,7 @@ export default function Requests() {
     }
 
     return rows;
-  }, [data, dateRange, timeFilter, status]);
+  }, [data, dateRange, timeFilter, status, search, providerNames]);
 
   const hasFilters = search !== '' || status !== 'all' || !!dateRange?.from || timeFilter !== 'all';
 
