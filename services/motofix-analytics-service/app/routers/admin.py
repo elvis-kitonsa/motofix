@@ -162,7 +162,7 @@ async def list_mechanics(
     total = await db.fetchval(f"SELECT COUNT(*) FROM mechanics{where_sql}", *params)
 
     query = f"""
-        SELECT id, phone, name, location, is_verified, rating, jobs_completed, created_at
+        SELECT id, phone, name, location, is_verified, is_available, rating, jobs_completed, created_at
         FROM mechanics
         {where_sql}
         ORDER BY created_at DESC
@@ -298,7 +298,7 @@ async def list_towing_providers(
     total = await db.fetchval(f"SELECT COUNT(*) FROM towing_providers{where_sql}", *params)
 
     rows = await db.fetch(
-        f"""SELECT id, phone, full_name AS name, location, is_verified, is_available, spn, created_at
+        f"""SELECT id, phone, full_name AS name, location, is_verified, is_available, rating, jobs_completed, spn, created_at
             FROM towing_providers{where_sql}
             ORDER BY created_at DESC
             LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}""",
@@ -551,26 +551,27 @@ async def dashboard_stats(
         stats["total_mechanics"] = 0
         stats["verified_mechanics"] = 0
 
-    # "Collected" = any payment that actually changed hands. Payments are labelled
-    # inconsistently across the codebase (MoMo→'success'/'successful', cash→'cash'),
-    # so count them all together for every money total.
+    # MOTOFIX's revenue is the flat platform fee per completed job (the `platform_fees`
+    # ledger), NOT the old driver-payment/commission model. These mirror the mechanic
+    # app's Fees tab: a 'paid' fee = revenue collected; an 'owed' fee = still outstanding.
     collected = await db.fetchval(
-        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
+        "SELECT COALESCE(SUM(amount), 0) FROM platform_fees WHERE status = 'paid'"
     )
-    paid_out = await db.fetchval(
-        "SELECT COALESCE(SUM(mechanic_payout), 0) FROM payments WHERE disbursement_status='success'"
+    pending = await db.fetchval(
+        "SELECT COALESCE(SUM(amount), 0) FROM platform_fees WHERE status = 'owed'"
     )
 
     stats["revenue_collected_ugx"] = float(collected or 0)
-    stats["paid_to_mechanics_ugx"] = float(paid_out or 0)
-    stats["profit_ugx"] = float((collected or 0) - (paid_out or 0))
-    stats["total_transactions"] = await db.fetchval("SELECT COUNT(*) FROM payments") or 0
-    stats["commission_earned_ugx"] = float(await db.fetchval(
-        "SELECT COALESCE(SUM(commission), 0) FROM payments WHERE collection_status IN ('success','successful','cash')"
-    ) or 0)
-    stats["pending_collections_ugx"] = float(await db.fetchval(
-        "SELECT COALESCE(SUM(quoted_amount), 0) FROM payments WHERE collection_status IN ('pending','initiated')"
-    ) or 0)
+    # The platform doesn't pay mechanics — drivers pay them directly, off-platform — so the
+    # flat fee is pure platform revenue: payout is 0 and profit equals revenue.
+    stats["paid_to_mechanics_ugx"] = 0.0
+    stats["profit_ugx"] = float(collected or 0)
+    stats["total_transactions"] = await db.fetchval(
+        "SELECT COUNT(*) FROM platform_fees WHERE status = 'paid'"
+    ) or 0
+    # The 10k/job fee IS the commission, so collected commission == revenue collected.
+    stats["commission_earned_ugx"] = float(collected or 0)
+    stats["pending_collections_ugx"] = float(pending or 0)
 
     stats["as_of"] = datetime.utcnow().isoformat() + "Z"
     stats["motofix_is_unstoppable"] = True
@@ -586,11 +587,13 @@ async def revenue_chart(
     db=Depends(get_db),
     admin=Depends(verify_admin_token)
 ):
+    # Revenue over time = platform fees actually collected (paid), by the day they were
+    # settled — same source as the dashboard's revenue total, so the chart stays in sync.
     query = """
-        SELECT to_char(created_at::date, 'YYYY-MM-DD') AS date,
-               COALESCE(SUM(quoted_amount), 0) AS amount
-        FROM payments
-        WHERE collection_status IN ('success','successful','cash')
+        SELECT to_char(COALESCE(paid_at, created_at)::date, 'YYYY-MM-DD') AS date,
+               COALESCE(SUM(amount), 0) AS amount
+        FROM platform_fees
+        WHERE status = 'paid'
         GROUP BY date
         ORDER BY date DESC
         LIMIT $1
