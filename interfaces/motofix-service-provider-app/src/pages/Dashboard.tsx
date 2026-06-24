@@ -347,42 +347,11 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAvailable, !!activeRequest])
 
-  /* ── Active-job cancellation watchdog ───────────────────────
-     The live WS handler above already closes a job the instant the driver cancels.
-     This is the BACKUP for when that event is missed (socket drop / app backgrounded):
-     while the mechanic is on a still-running job, we poll their current job; if the
-     server no longer lists it, the driver pulled out, so we close it and notify exactly
-     like the WS path. Gated to pre-completion statuses so finishing a job never trips it
-     (the driver can't cancel once it's awaiting confirmation anyway), and it needs two
-     empty polls in a row to shrug off a transient network blip. */
-  useEffect(() => {
-    const LIVE = ['accepted', 'en_route', 'arrived', 'in_progress']
-    if (!activeRequest || !LIVE.includes(activeRequest.status)) return
-    const localId = String(activeRequest.id)
-    const driverName = activeRequest.driver_name ?? 'The driver'
-    let stop = false
-    let emptyStreak = 0
-    const check = async () => {
-      try {
-        const res = await jobService.getActive()
-        if (stop) return
-        const stillMine = (res.data ?? []).some(j => String(j.id) === localId)
-        if (stillMine) { emptyStreak = 0; return }
-        emptyStreak += 1
-        if (emptyStreak < 2) return            // ignore a single transient blip
-        // The server no longer lists this live job → the driver cancelled it.
-        toast.error(`${driverName} cancelled this job.`, { duration: 8000 })
-        setActiveRequest(null)
-        switchTab('home')
-        loadHistoryStats(mechIdRef.current)
-      } catch {
-        emptyStreak = 0                        // network error ≠ cancellation; retry next tick
-      }
-    }
-    const interval = setInterval(check, 8000)
-    return () => { stop = true; clearInterval(interval) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRequest?.id, activeRequest?.status])
+  // NOTE: a polling "is my job gone?" watchdog was removed here. Inferring a
+  // cancellation from the current-job lookup coming back empty is unsafe — that
+  // lookup is ALSO empty when the job completes or when the proxy briefly times out,
+  // so it raised a false "driver cancelled this job" on normal completion. Real
+  // cancellations are handled reliably by the WebSocket status_update above.
 
   /* ── Background location auto-update ────────────────────── */
   useEffect(() => {
