@@ -1392,7 +1392,31 @@ async def get_requests(
                 request_data["media_files"] = _media_rows_to_list(media_rows)
             except Exception as me:
                 logger.warning(f"Could not fetch media for request {row.get('id')}: {me}")
-            
+
+            # For the admin history, also surface media EXCHANGED in the in-job chat
+            # (photos / voice notes the driver and mechanic sent each other) alongside the
+            # files uploaded with the request. Admin-only so drivers' own history is unchanged.
+            if role == "admin":
+                try:
+                    chat_rows = await db.fetch(
+                        """SELECT media_url, media_type, created_at
+                           FROM chat_messages
+                           WHERE request_id = $1 AND media_url IS NOT NULL AND COALESCE(media_type,'none') <> 'none'
+                           ORDER BY created_at DESC""",
+                        row["id"],
+                    )
+                    for c in chat_rows:
+                        mt = (c["media_type"] or "").lower()
+                        file_type = "photo" if mt in ("image", "photo") else ("voice" if mt in ("voice", "audio") else "document")
+                        request_data["media_files"].append({
+                            "url": c["media_url"],
+                            "file_type": file_type,
+                            "size_kb": 0.0,
+                            "uploaded_at": c["created_at"].isoformat() if c["created_at"] else "",
+                        })
+                except Exception as ce:
+                    logger.warning(f"Could not fetch chat media for request {row.get('id')}: {ce}")
+
             requests_list.append(request_data)
         
         logger.info(f"📊 Fetched {len(requests_list)} requests")
