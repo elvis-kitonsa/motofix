@@ -229,6 +229,9 @@ export interface ServiceRequest {
   completedAt?: string;
   actualFee?: number | null;     // the mechanic's final agreed charge (UGX)
   serviceNote?: string | null;   // what the mechanic fixed
+  // Media tied to the job: files uploaded with the request PLUS anything exchanged in
+  // the in-job chat (the backend folds both into this list for the admin view).
+  media_files?: { url: string; file_type: string; size_kb: number; uploaded_at: string }[];
 }
 
 export interface PaginatedResponse<T> {
@@ -287,6 +290,7 @@ export const fetchPublicRequests = async (params: RequestsParams = {}) => {
       completedAt: r.completed_at ?? undefined,
       actualFee: r.actual_fee ?? null,
       serviceNote: r.service_note ?? null,
+      media_files: r.media_files ?? [],   // uploaded + chat-exchanged media (kept for the admin table)
     }));
 
     return {
@@ -310,6 +314,7 @@ export interface Mechanic {
   location: string;
   rating: number;
   jobsCompleted: number;
+  available: boolean;
   verified: boolean;
   joinedAt: string;
   isBanned: boolean;
@@ -340,6 +345,7 @@ export const fetchMechanics = async (params: MechanicsParams) => {
     location: m.location ?? '',
     rating: Number(m.rating ?? 0),
     jobsCompleted: Number(m.jobs_completed ?? m.jobsCompleted ?? 0),
+    available: Boolean(m.is_available ?? m.available),
     verified: Boolean(m.is_verified ?? m.verified),
     joinedAt: m.created_at ?? new Date().toISOString(),
     isBanned: Boolean(m.is_banned),
@@ -400,6 +406,8 @@ export interface TowingProvider {
   location: string;
   verified: boolean;
   available: boolean;
+  rating: number;
+  jobsCompleted: number;
   spn: string | null;
   joinedAt: string;
   isBanned: boolean;
@@ -423,6 +431,8 @@ export const fetchTowingProviders = async (params: MechanicsParams) => {
     location: p.location ?? '',
     verified: Boolean(p.is_verified),
     available: Boolean(p.is_available),
+    rating: Number(p.rating ?? 0),
+    jobsCompleted: Number(p.jobs_completed ?? p.jobsCompleted ?? 0),
     spn: p.spn ?? null,
     joinedAt: p.created_at ?? new Date().toISOString(),
     isBanned: Boolean(p.is_banned),
