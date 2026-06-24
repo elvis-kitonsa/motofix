@@ -879,8 +879,10 @@ export default function ActiveJob({ activeRequest, sendMessage, lastMessage, onJ
         {/* Content cards — map is the first card so it shares the same padding/alignment */}
         <div style={{ padding: '16px 16px 100px' }}>
 
-        {/* Map */}
-        {(() => {
+        {/* Map — shown only during the travel phase (accepted → en route → arrived).
+            Once service starts it closes (matching the driver app), leaving just the
+            progress card + job details. */}
+        {['accepted', 'en_route', 'arrived'].includes(status) && (() => {
           const mapCardStyle: React.CSSProperties = {
             height: 320, borderRadius: 16, overflow: 'hidden',
             border: `1px solid ${C.border}`,
