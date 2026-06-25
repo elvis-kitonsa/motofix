@@ -1763,30 +1763,36 @@ async def accept_request(
                     request_data[k] = request_data[k].isoformat()
             request_data['media_files'] = []
 
-            event = {
-                'type': 'job_taken',
-                'job_id': request_id,
-                'mechanic': {
-                    'id': mechanic_id,
-                    'name': mechanic_name,
-                },
-                'eta_minutes': payload.eta_minutes,
-                'taken_at': datetime.utcnow().isoformat() + 'Z',
-            }
+        # ── Transaction has COMMITTED here ──────────────────────────────────────────
+        # Broadcast AFTER commit, never inside the transaction: a slow or dead WebSocket
+        # must not be able to roll back a successful accept (that was the bug where the
+        # driver saw "accepted" but the mechanic got "Failed to accept job" after a long
+        # hang). broadcast() is itself bounded + concurrent, so one zombie socket can no
+        # longer stall this either — the mechanic gets a clean, fast response.
+        event = {
+            'type': 'job_taken',
+            'job_id': request_id,
+            'mechanic': {
+                'id': mechanic_id,
+                'name': mechanic_name,
+            },
+            'eta_minutes': payload.eta_minutes,
+            'taken_at': datetime.utcnow().isoformat() + 'Z',
+        }
 
-            # Broadcast to all connected WebSocket clients
-            await manager.broadcast(event)
+        # Broadcast to all connected WebSocket clients
+        await manager.broadcast(event)
 
-            # Also broadcast a status update with the canonical request snapshot
-            await manager.broadcast({
-                'type': 'status_update',
-                'job_id': request_id,
-                'status': 'accepted',
-                'request': {k: v for k, v in request_data.items() if k != 'phone'},
-                'updated_at': datetime.utcnow().isoformat() + 'Z',
-            })
+        # Also broadcast a status update with the canonical request snapshot
+        await manager.broadcast({
+            'type': 'status_update',
+            'job_id': request_id,
+            'status': 'accepted',
+            'request': {k: v for k, v in request_data.items() if k != 'phone'},
+            'updated_at': datetime.utcnow().isoformat() + 'Z',
+        })
 
-            return JSONResponse({'status': 'accepted', 'request_id': str(request_id), 'mechanic': event['mechanic'], 'eta_minutes': payload.eta_minutes})
+        return JSONResponse({'status': 'accepted', 'request_id': str(request_id), 'mechanic': event['mechanic'], 'eta_minutes': payload.eta_minutes})
 
     except HTTPException:
         raise
