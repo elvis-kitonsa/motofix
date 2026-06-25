@@ -534,8 +534,14 @@ app.add_middleware(
 # ────────────────────────────── REVERSE GEOCODING (GOOGLE MAPS PROXY) ──────────────────────────────
 
 # In-memory geocode cache: key → (result_dict, expires_at)
+# A street address for a coordinate doesn't change, so we cache SUCCESSES for hours —
+# this is what stops the apps' constant polling from re-hammering Google and saturating
+# the single worker's event loop (which was delaying job-accept/cancel responses past the
+# client's 30s timeout). Failures are cached only briefly so we retry Google soon after a
+# transient network blip.
 _geocode_cache: dict = {}
-_GEOCODE_TTL = 30  # seconds
+_GEOCODE_TTL = 6 * 3600   # 6 hours for a successful address lookup
+_GEOCODE_FAIL_TTL = 60    # 60 s for a coordinate fallback (so we retry Google soon)
 _GEOCODE_KEY_PRECISION = 4  # ~11 m
 
 
@@ -550,35 +556,43 @@ async def reverse_geocode(lat: float, lon: float):
     if cached and time.time() < cached[1]:
         return cached[0]
 
+    # The apps poll for addresses constantly, so this endpoint must NEVER hang or 500.
+    # Previously it used a 10s timeout and no error handling: when the network to Google
+    # was flaky, calls piled up (each hanging ~10s, throwing UNHANDLED errors), saturated
+    # the backend, and delayed unrelated requests like job-accept. Now we fail fast, fall
+    # back to showing the coordinates, and cache the fallback too (negative cache) so we
+    # don't re-hammer Google on every poll.
+    fallback = {"display_name": f"{round(lat, 5)}, {round(lon, 5)}", "lat": lat, "lon": lon}
+
     api_key = os.getenv("GOOGLE_GEOCODING_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="Geocoding API key not configured")
+        _geocode_cache[cache_key] = (fallback, time.time() + _GEOCODE_FAIL_TTL)
+        return fallback
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://maps.googleapis.com/maps/api/geocode/json",
-            params={
-                "latlng": f"{lat},{lon}",
-                "key": api_key,
-            },
-            timeout=10,
-        )
+    try:
+        # Tight timeouts (2s connect / 4s total) — fail fast instead of holding a slot.
+        timeout = httpx.Timeout(4.0, connect=2.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={"latlng": f"{lat},{lon}", "key": api_key},
+            )
         data = response.json()
+        results = data.get("results", []) if data.get("status") == "OK" else []
+        if results:
+            result = {
+                "display_name": results[0].get("formatted_address", "") or fallback["display_name"],
+                "lat": lat,
+                "lon": lon,
+            }
+            _geocode_cache[cache_key] = (result, time.time() + _GEOCODE_TTL)
+            return result
+    except Exception as exc:
+        logger.warning("Reverse geocode failed for %s,%s — using coordinates: %s", lat, lon, exc)
 
-        if data.get("status") != "OK":
-            raise HTTPException(status_code=502, detail=f"Geocoding failed: {data.get('status')}")
-
-        results = data.get("results", [])
-        if not results:
-            raise HTTPException(status_code=404, detail="No address found for these coordinates")
-
-        result = {
-            "display_name": results[0].get("formatted_address", ""),
-            "lat": lat,
-            "lon": lon,
-        }
-        _geocode_cache[cache_key] = (result, time.time() + _GEOCODE_TTL)
-        return result
+    # Google unreachable, returned no result, or errored — briefly cache + return fallback.
+    _geocode_cache[cache_key] = (fallback, time.time() + _GEOCODE_FAIL_TTL)
+    return fallback
 
 # ────────────────────────────── HEALTH CHECK ENDPOINTS ──────────────────────────────
 
