@@ -860,15 +860,30 @@ class ConnectionManager:
         logger.info(f"❎ WebSocket client disconnected. Total: {len(self.active_connections)}")
 
     async def broadcast(self, message: Dict[str, Any]):
-        # Send JSON message to all active clients, cleaning up dead sockets
-        disconnected = []
-        for ws in list(self.active_connections):
+        # Push a JSON event to every connected client. Sends run CONCURRENTLY, each
+        # with a short timeout, so a single dead/zombie socket (e.g. a client whose
+        # laptop slept or whose tab closed without a clean disconnect) can't block the
+        # others — or the HTTP request that triggered this broadcast.
+        #
+        # Previously these awaits ran one-by-one with no timeout: a half-open socket
+        # would stall on send for up to ~60s (the OS TCP timeout) before erroring, which
+        # hung accept/cancel/status calls and left the driver and mechanic apps out of
+        # sync. Dead sockets are still cleaned up.
+        conns = list(self.active_connections)
+        if not conns:
+            return
+
+        async def _send(ws: WebSocket):
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message), timeout=3)
+                return None
             except Exception:
-                disconnected.append(ws)
-        for ws in disconnected:
-            self.disconnect(ws)
+                return ws  # mark for cleanup
+
+        dead = await asyncio.gather(*(_send(ws) for ws in conns))
+        for ws in dead:
+            if ws is not None:
+                self.disconnect(ws)
 
 manager = ConnectionManager()
 
