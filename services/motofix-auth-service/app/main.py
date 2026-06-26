@@ -494,7 +494,11 @@ async def get_provider_public_profile(mechanic_id: int, request: Request):
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "ok", "service": "motofix-auth-service"}
+    return {
+        "status": "ok",
+        "service": "motofix-auth-service",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ── Startup log ────────────────────────────────────────────────────────────────
