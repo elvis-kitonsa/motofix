@@ -901,6 +901,16 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Holds references to fire-and-forget background tasks (notifications etc.) so the event
+# loop doesn't garbage-collect them mid-flight. Tasks remove themselves when done.
+_bg_tasks: set = set()
+
+
+def _spawn_bg(coro) -> None:
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
+
 
 # ── Matching-service helpers ──────────────────────────────────────────────────
 
@@ -2371,52 +2381,50 @@ async def update_status(
 
     notifications_url = os.getenv("NOTIFICATIONS_URL", "http://localhost:8004")
 
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.post(
-                f"{notifications_url}/notify/sms",
-                json={"to": phone, "message": sms_message},
-                timeout=10.0,
-            )
-            logger.info("SMS notification sent for request %s (status: %s)", request_id, new_status)
-        except Exception as e:
-            logger.warning("SMS notification failed for request %s: %s", request_id, e)
+    # FCM token lookup needs the DB connection, so do it now (while we hold it). It may
+    # fail (no users table here) — that's fine, FCM is then skipped.
+    driver_fcm_token = None
+    try:
+        if row.get("user_id"):
+            tok_row = await db.fetchrow("SELECT fcm_token FROM users WHERE id = $1", row.get("user_id"))
+            driver_fcm_token = tok_row["fcm_token"] if tok_row else None
+    except Exception:
+        driver_fcm_token = None
 
-        try:
-            await client.post(
-                f"{notifications_url}/notify/whatsapp",
-                json={"to": phone, "message": sms_message},
-                timeout=10.0,
-            )
-            logger.info("WhatsApp notification sent for request %s (status: %s)", request_id, new_status)
-        except Exception as e:
-            logger.warning("WhatsApp notification failed for request %s: %s", request_id, e)
-
-        # FCM push notification — fetch driver's device token from users table (if available)
-        try:
-            driver_token_row = await db.fetchrow(
-                "SELECT fcm_token FROM users WHERE id = $1", row.get("user_id")
-            ) if row.get("user_id") else None
-            driver_fcm_token = driver_token_row["fcm_token"] if driver_token_row else None
-
+    # SMS / WhatsApp / FCM are best-effort and currently flaky (the notifications service
+    # can 500; there's no users table here for FCM). Awaiting them inline made every status
+    # change — and especially job completion, which fires several in a row — hang for many
+    # seconds. Fire them in the BACKGROUND so the mechanic/driver get an instant response;
+    # the live UI update still happens via the WebSocket broadcast below. Short timeouts so
+    # a hung notifications service can't pile tasks up.
+    async def _send_status_notifications():
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
+            try:
+                await client.post(f"{notifications_url}/notify/sms", json={"to": phone, "message": sms_message})
+                logger.info("SMS notification sent for request %s (status: %s)", request_id, new_status)
+            except Exception as e:
+                logger.warning("SMS notification failed for request %s: %s", request_id, e)
+            try:
+                await client.post(f"{notifications_url}/notify/whatsapp", json={"to": phone, "message": sms_message})
+                logger.info("WhatsApp notification sent for request %s (status: %s)", request_id, new_status)
+            except Exception as e:
+                logger.warning("WhatsApp notification failed for request %s: %s", request_id, e)
             if driver_fcm_token:
-                await client.post(
-                    f"{notifications_url}/notify/push",
-                    json={
-                        "device_token": driver_fcm_token,
-                        "title": "MOTOFIX Update",
-                        "body": push_body,
-                        "data": {
-                            "request_id": str(request_id),
-                            "status": new_status,
-                            "type": "status_update",
+                try:
+                    await client.post(
+                        f"{notifications_url}/notify/push",
+                        json={
+                            "device_token": driver_fcm_token,
+                            "title": "MOTOFIX Update",
+                            "body": push_body,
+                            "data": {"request_id": str(request_id), "status": new_status, "type": "status_update"},
                         },
-                    },
-                    timeout=10.0,
-                )
-                logger.info("FCM push sent to driver for request %s (status: %s)", request_id, new_status)
-        except Exception as e:
-            logger.warning("FCM push notification failed for request %s: %s", request_id, e)
+                    )
+                    logger.info("FCM push sent to driver for request %s (status: %s)", request_id, new_status)
+                except Exception as e:
+                    logger.warning("FCM push notification failed for request %s: %s", request_id, e)
+
+    _spawn_bg(_send_status_notifications())
 
     # Broadcast canonical status update for real-time clients
     snap = await db.fetchrow(
