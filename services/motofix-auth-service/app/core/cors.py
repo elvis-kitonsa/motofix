@@ -7,8 +7,21 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+# Match ANY local-network origin (localhost / 127.0.0.1 / private LAN IPs) on any port.
+# The frontends are served on whatever host:port the demo machine happens to use, and that
+# IP/port changes between networks, so a fixed allowlist can't cover LAN / mobile testing.
+LAN_ORIGIN_REGEX = re.compile(
+    r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$"
+)
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    """True if the origin is in the explicit allowlist or matches a local-network address."""
+    return bool(origin) and (origin in ALLOWED_ORIGINS or bool(LAN_ORIGIN_REGEX.match(origin)))
 
 # Production-safe allowed origins - NO wildcards
 ALLOWED_ORIGINS = [
@@ -79,6 +92,7 @@ def setup_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
+        allow_origin_regex=LAN_ORIGIN_REGEX.pattern,  # plus any local-network origin
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
@@ -93,9 +107,9 @@ def setup_cors(app: FastAPI) -> None:
         This is a backup to handle edge cases where CORSMiddleware might not apply.
         """
         origin = request.headers.get("origin")
-        
-        # If origin is allowed, add CORS headers
-        if origin in ALLOWED_ORIGINS:
+
+        # If origin is allowed (explicit allowlist or a local-network address), add CORS headers
+        if _origin_allowed(origin):
             # For OPTIONS preflight requests, return early with 200
             if request.method == "OPTIONS":
                 return Response(
