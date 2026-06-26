@@ -14,7 +14,7 @@ import os
 import random
 import string
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -243,7 +243,11 @@ def _save_photo(claim_ref: str, slot: str, data_url: str) -> Optional[str]:
 
 @app.get("/health", tags=["system"])
 async def health():
-    return {"status": "ok", "service": "motofix-insurance-service"}
+    return {
+        "status": "ok",
+        "service": "motofix-insurance-service",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/insurers", tags=["insurers"])
