@@ -68,6 +68,11 @@ allowed_origins = [x for x in allowed_origins if not (x in seen or seen.add(x))]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    # Also allow ANY local-network origin (localhost / 127.0.0.1 / private LAN IPs) on any
+    # port. The apps are served on whatever host:port the demo machine happens to use (e.g.
+    # http://192.168.1.3:8088), and that IP/port changes between networks — without this,
+    # cross-origin calls get CORS-blocked when the apps are opened over the LAN from a phone.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
