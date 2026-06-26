@@ -17,6 +17,26 @@ cp .env.example .env               # fill in values
 uvicorn app.main:app --reload --port 8002
 ```
 
+## Endpoints
+
+Interactive API docs at `/docs`. Main groups:
+
+| Group | Examples |
+|-------|----------|
+| Mechanic auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me` |
+| Mechanic self-service | `PATCH /mechanics/me/availability`, `PATCH /mechanics/me/location`, `GET /mechanics/me/current-job`, `GET /mechanics/me/{completed-jobs,handled-jobs,job-history,strikes,reviews}`, `POST /mechanics/me/fcm-token` |
+| Mechanics CRUD (`/mechanics`, used by admin) | `POST /mechanics/`, `GET /mechanics/`, `GET|PATCH|DELETE /mechanics/{id}` |
+| System | `GET /health` |
+
+## Configuration (environment)
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection (motofix_mechanics). |
+| `SECRET_KEY` | JWT signing (must match the other services). |
+| `TOKEN_EXPIRE_HOURS` | Mechanic token lifetime. |
+| `DISPATCH_SERVICE_URL` | Used to fetch the mechanic's current/handled jobs from dispatch. |
+
 Health check: `GET /health`.
 
 See the [root README](../../README.md) and [docs/RUNBOOK.md](../../docs/RUNBOOK.md)
