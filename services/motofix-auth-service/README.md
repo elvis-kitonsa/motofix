@@ -1,48 +1,58 @@
-MOTOFIX Auth Service
+# motofix-auth-service
 
-This service handles OTP-based authentication for MOTOFIX.
+Authentication and account management for the MOTOFIX platform. Handles OTP-based
+driver sign-up/login, mechanic (provider) registration and login, admin login,
+provider applications and approval, user profiles/preferences, and the spare-parts
+catalog and driver parts orders.
 
-Quick setup (development)
+- **Stack:** Python / FastAPI
+- **Port:** 8000
+- **Database:** motofix_auth
+- **External services:** Africa's Talking (OTP SMS), Claude/Anthropic (document verification)
 
-1. Create a virtual environment and activate it:
+## Endpoints
 
-```powershell
-python -m venv venv
-& .\venv\Scripts\Activate.ps1
-```
+Interactive API docs at `/docs`. Main groups:
 
-2. Install dependencies:
+| Group | Examples |
+|-------|----------|
+| Driver auth (`/auth`) | `POST /auth/register/driver`, `POST /auth/verify-otp`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/verify-document` |
+| Provider auth (`/auth`) | `POST /auth/register/provider`, `POST /auth/login/provider`, `GET /auth/me/provider`, `PATCH /auth/provider/me/availability`, `GET /auth/providers/{mechanic_id}/public` |
+| Admin (`/auth`) | `POST /auth/login/admin`, `POST /auth/admin/verify-provider/{id}` |
+| Users | `GET|PATCH /users/me`, `POST /users/me/fcm-token`, `GET|PATCH /users/me/preferences`, `GET /users/`, `GET /users/{id}`, `PATCH /users/{id}/status` |
+| Provider applications (`/providers`) | `POST|GET /providers/applications`, `GET /providers/applications/status`, `POST /providers/applications/{id}/approve|reject|reopen|verify|request-reupload` |
+| Spare parts (`/auth`) | `GET|PUT|DELETE /auth/admin/parts-catalog[/{fault_category}]`, `GET /auth/parts-catalog/{fault_category}`, `POST|GET /auth/me/parts-orders` |
+| System | `GET /health` |
 
-```powershell
+## Configuration (environment)
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection (motofix_auth). |
+| `SECRET_KEY` / `ALGORITHM` | JWT signing (must match the other services). |
+| `ACCESS_TOKEN_EXPIRE_HOURS` / `ACCESS_TOKEN_EXPIRE_SECONDS` | Driver/provider token lifetime. |
+| `ADMIN_TOKEN_EXPIRE_HOURS` | Admin token lifetime. |
+| `AT_USERNAME` / `AT_API_KEY` | Africa's Talking creds for OTP SMS. Falls back to printing the OTP to the server console if unset. |
+| `ANTHROPIC_API_KEY` | Claude key for AI document verification. |
+| `UPLOAD_DIR` | Where uploaded application documents are stored. |
+| `PROVIDER_APP_URL` | Provider app base URL (used in application emails/links). |
+| `DISPATCH_SERVICE_URL` / `DISPATCH_DATABASE_URL` | Cross-service calls/reads to dispatch. |
+| `ENV` | `development` / `production` (controls secure-cookie flags). |
+
+## Run locally
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env               # fill in values
+uvicorn app.main:app --reload --port 8000
 ```
 
-3. Copy `.env.example` to `.env` and fill in credentials (optional):
+Health check: `GET /health`.
 
-```powershell
-copy .env.example .env
-# then edit .env to add your AT_USERNAME and AT_API_KEY
-```
+> Security note: OTPs are kept in an in-memory store in development. For production,
+> use a store with expiry and rate limiting, and never commit real credentials.
 
-4. Run the app:
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-Africa's Talking (OTP SMS)
-
-- To enable sending OTPs via Africa's Talking, set the following environment variables (or put them into `.env`):
-
-```
-AT_USERNAME=your_africas_talking_username
-AT_API_KEY=your_africas_talking_api_key
-AT_FROM=+1234567890  # optional
-```
-
-- The app falls back to printing the OTP to the server console if the SDK or credentials are not present.
-
-Security notes
-
-- OTPs are kept in an in-memory store for development. For production, consider using Redis with expiry and rate limiting.
-- Do not commit real credentials to source control.
+See the [root README](../../README.md) and [docs/RUNBOOK.md](../../docs/RUNBOOK.md)
+for the full platform overview.
