@@ -5,6 +5,8 @@
 # Other services call its endpoints (e.g. "new job available") to reach mechanics
 # and customers. The actual sending logic lives in routers/notifications.py.
 
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -54,4 +56,8 @@ app.include_router(notifications.router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "motofix-notifications"}
+    return {
+        "status": "ok",
+        "service": "motofix-notifications",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
