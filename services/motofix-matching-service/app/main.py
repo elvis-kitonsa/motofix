@@ -16,6 +16,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import asyncpg
@@ -147,7 +148,11 @@ def _require_token(authorization: str = Header(...)) -> dict:
 
 @app.get("/health", tags=["system"])
 async def health():
-    return {"status": "ok", "service": "mechanic-matching"}
+    return {
+        "status": "ok",
+        "service": "mechanic-matching",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.post("/match", response_model=MatchResponse, tags=["matching"])
