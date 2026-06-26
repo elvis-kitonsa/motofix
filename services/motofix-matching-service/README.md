@@ -19,6 +19,25 @@ cp .env.example .env               # fill in values
 uvicorn app.main:app --reload --port 8003
 ```
 
+## Endpoints
+
+Interactive API docs at `/docs`. All endpoints require a valid login token.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/match` | Rank verified, available mechanics for a request (location + problem type); skips anyone who already declined this request. |
+| POST | `/dispatch/{request_id}/outcome` | Record a mechanic's response (accepted / declined / expired). |
+| GET  | `/dispatch/{request_id}/history` | Dispatch history for a request. |
+| GET  | `/health` | Liveness check. |
+
+## Configuration (environment)
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection (motofix_matching). |
+| `SECRET_KEY` / `ALGORITHM` | JWT verification (must match the other services). |
+| `MECHANICS_SERVICE_URL` | Verification service URL, used to fetch the candidate mechanic pool. |
+
 Health check: `GET /health`.
 
 See the [root README](../../README.md) and [docs/RUNBOOK.md](../../docs/RUNBOOK.md)
