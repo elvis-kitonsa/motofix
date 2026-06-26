@@ -589,4 +589,8 @@ async def get_transactions(
 # ──────────────────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "motofix-payments-service"}
+    return {
+        "status": "ok",
+        "service": "motofix-payments-service",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
